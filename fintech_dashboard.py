@@ -573,9 +573,10 @@ fig.add_trace(go.Bar(
     customdata=[[fmt_num(v)] for v in vals[::-1]],
 ))
 
-# 병목 강조 어노테이션
+# 병목 강조 어노테이션 (역순 리스트에서 광고 클릭의 인덱스 = len-2)
+bottleneck_idx = len(FUNNEL_LABELS) - 2
 fig.add_annotation(
-    x=pct_of_top[1] / 2, y=FUNNEL_LABELS[::-1].index(FUNNEL_LABELS[1]),
+    x=pct_of_top[1] / 2, y=bottleneck_idx,
     text=f"<b>핵심 병목 — CTR {vals[1]/vals[0]*100:.2f}%</b>",
     showarrow=True, arrowhead=2, arrowcolor='white',
     font=dict(size=11, color='white'),
