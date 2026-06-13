@@ -537,71 +537,76 @@ for i in range(1, len(vals)):
     drop_rates.append({'stage': f"{FUNNEL_LABELS[i-1]}→{FUNNEL_LABELS[i]}", 'drop': drop, 'conv': conv})
 dr_df = pd.DataFrame(drop_rates)
 
-col1, col2 = st.columns([2, 3], gap="medium")
+# 퍼널 수평 막대 + 전환율 레이블 — 가시성 최우선
+pct_of_top = [v / vals[0] * 100 for v in vals]
+bar_colors_fn = []
+for i, v in enumerate(pct_of_top):
+    if i == 0:   bar_colors_fn.append("#334155")
+    elif i == 1: bar_colors_fn.append(C_BAD)       # 노출→클릭 병목
+    elif v >= 60: bar_colors_fn.append(C_GOOD)
+    elif v >= 20: bar_colors_fn.append("#2563eb")
+    else:         bar_colors_fn.append(C_WARN)
 
-with col1:
-    # Funnel chart
-    colors_funnel = [C_BAD if i == 0 else C_GOOD if dr_df.iloc[i-1]['conv'] > 60 else C_WARN
-                     for i in range(len(vals))]
-    colors_funnel[0] = C_MUTED  # 노출은 기준
-    colors_funnel[1] = C_BAD    # 클릭 단계 - 가장 큰 이탈
+# 단계 간 전환율 레이블 (이전 단계 대비)
+step_conv = ["기준"]
+for i in range(1, len(vals)):
+    r = vals[i] / vals[i-1] * 100
+    step_conv.append(f"↓ {r:.1f}%")
 
-    fig = go.Figure(go.Funnel(
-        y=FUNNEL_LABELS, x=vals,
-        textinfo="percent previous",
-        textfont=dict(size=11, color='white', family=PLOTLY_FONT['family']),
-        marker=dict(color=[
-            "#334155","#dc2626","#2563eb","#3b82f6",
-            "#059669","#10b981","#34d399","#6ee7b7"
-        ]),
-        connector=dict(line=dict(color=C_BORDER, width=1)),
-    ))
-    layout = base_layout(height=340, margin=dict(l=10, r=10, t=30, b=10))
-    layout['title'] = dict(text="전체 마케팅 퍼널", font=dict(size=12, color=C_MUTED), x=0)
-    layout['showlegend'] = False
-    fig.update_layout(**layout)
-    st.plotly_chart(fig, use_container_width=True)
+fig = go.Figure()
+fig.add_trace(go.Bar(
+    y=FUNNEL_LABELS[::-1],
+    x=pct_of_top[::-1],
+    orientation='h',
+    marker=dict(
+        color=bar_colors_fn[::-1],
+        line=dict(color='white', width=1),
+    ),
+    text=[
+        f"<b>{fmt_num(v)}</b>  ({p:.1f}%)  {s}"
+        for v, p, s in zip(vals[::-1], pct_of_top[::-1], step_conv[::-1])
+    ],
+    textposition='inside',
+    insidetextanchor='start',
+    textfont=dict(size=12, color='white', family=PLOTLY_FONT['family']),
+    hovertemplate="<b>%{y}</b><br>수: %{customdata[0]}<br>노출 대비: %{x:.1f}%<extra></extra>",
+    customdata=[[fmt_num(v)] for v in vals[::-1]],
+))
 
-with col2:
-    # Step conversion bar — color by severity
-    conv_colors = []
-    for r in dr_df['conv']:
-        if r >= 70: conv_colors.append(C_GOOD)
-        elif r >= 20: conv_colors.append(C_WARN)
-        else: conv_colors.append(C_BAD)
+# 병목 강조 어노테이션
+fig.add_annotation(
+    x=pct_of_top[1] / 2, y=FUNNEL_LABELS[::-1].index(FUNNEL_LABELS[1]),
+    text=f"<b>핵심 병목 — CTR {vals[1]/vals[0]*100:.2f}%</b>",
+    showarrow=True, arrowhead=2, arrowcolor='white',
+    font=dict(size=11, color='white'),
+    ax=120, ay=0,
+)
 
-    fig2 = go.Figure()
-    fig2.add_trace(go.Bar(
-        x=dr_df['stage'], y=dr_df['conv'],
-        marker_color=conv_colors,
-        text=[f"{v:.1f}%" for v in dr_df['conv']],
-        textposition='outside',
-        textfont=dict(size=10, color=C_TEXT),
-        width=0.55,
-    ))
-    fig2.add_hline(y=50, line_dash="dot", line_color=C_MUTED, line_width=1.2,
-                   annotation_text=" 50% 기준선", annotation_font=dict(size=9, color=C_MUTED),
-                   annotation_position="right")
+layout = base_layout(height=400, margin=dict(l=10, r=20, t=36, b=10))
+layout['title'] = dict(
+    text="전체 마케팅 퍼널 — 각 막대: 절대 수 / 노출 대비 % / 이전 단계 대비 전환율",
+    font=dict(size=12, color=C_MUTED), x=0
+)
+layout['xaxis']['title'] = "노출 대비 비율 (%)"
+layout['xaxis']['ticksuffix'] = "%"
+layout['xaxis']['range'] = [0, 115]
+layout['yaxis']['showgrid'] = False
+layout['showlegend'] = False
+fig.update_layout(**layout)
+st.plotly_chart(fig, use_container_width=True)
 
-    # Annotate the bottleneck
-    fig2.add_annotation(
-        x=0, y=dr_df.iloc[0]['conv'],
-        text=f"<b>최대 이탈<br>{dr_df.iloc[0]['conv']:.2f}%</b>",
-        showarrow=True, arrowhead=2, arrowcolor=C_BAD,
-        font=dict(size=10, color=C_BAD),
-        bgcolor="#fef2f2", bordercolor=C_BAD, borderwidth=1, borderpad=4,
-        ay=-50
+# 전환율 요약 행
+conv_cols = st.columns(len(dr_df))
+for col_c, (_, row) in zip(conv_cols, dr_df.iterrows()):
+    color = C_BAD if row['conv'] < 5 else C_GOOD if row['conv'] >= 70 else C_WARN
+    col_c.markdown(
+        f"<div style='text-align:center;padding:6px 4px;background:{C_BG};"
+        f"border-radius:6px;border:1px solid {C_BORDER}'>"
+        f"<div style='font-size:9px;color:{C_MUTED};margin-bottom:2px'>{row['stage']}</div>"
+        f"<div style='font-size:14px;font-weight:700;color:{color}'>{row['conv']:.1f}%</div>"
+        f"</div>",
+        unsafe_allow_html=True
     )
-
-    layout2 = base_layout(height=340)
-    layout2['title'] = dict(text="단계별 전환율 — 빨강=이탈 심각, 주황=주의, 초록=양호", font=dict(size=12, color=C_MUTED), x=0)
-    layout2['xaxis']['tickangle'] = -30
-    layout2['xaxis']['tickfont']['size'] = 9
-    layout2['yaxis']['title'] = "전환율 (%)"
-    layout2['yaxis']['ticksuffix'] = "%"
-    layout2['showlegend'] = False
-    fig2.update_layout(**layout2)
-    st.plotly_chart(fig2, use_container_width=True)
 
 finding(f"노출→클릭 전환율 {dr_df.iloc[0]['conv']:.2f}%가 최대 병목. "
         "클릭→설치(56%)·설치→실행(90%)은 이미 최적화 완료. "
