@@ -227,6 +227,12 @@ def safe_div(a, b, pct=False):
     r = np.where(b == 0, np.nan, a / b)
     return r * 100 if pct else r
 
+def fmt_num(v):
+    if v >= 1e8: return f"{v/1e8:.1f}억"
+    if v >= 1e4: return f"{v/1e4:.0f}만"
+    if v >= 1e3: return f"{v/1e3:.1f}K"
+    return f"{v:,.0f}"
+
 def fmt_won(v):
     if v >= 1e8: return f"₩{v/1e8:.1f}억"
     if v >= 1e4: return f"₩{v/1e4:.0f}만"
