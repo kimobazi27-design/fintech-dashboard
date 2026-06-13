@@ -543,77 +543,87 @@ for i in range(1, len(vals)):
     drop_rates.append({'stage': f"{FUNNEL_LABELS[i-1]}→{FUNNEL_LABELS[i]}", 'drop': drop, 'conv': conv})
 dr_df = pd.DataFrame(drop_rates)
 
-# 퍼널 수평 막대 + 전환율 레이블 — 가시성 최우선
-pct_of_top = [v / vals[0] * 100 for v in vals]
+# ── 핵심 아이디어: 이전 단계 대비 전환율로 모든 막대를 0~100% 범위에 표시
+# 광고노출(45억) vs 클릭(4700만) 절대값 격차 문제 해결
+step_conv_rates = []
+for i in range(len(vals)):
+    if i == 0:
+        step_conv_rates.append(100.0)
+    else:
+        step_conv_rates.append(vals[i] / vals[i-1] * 100)
+
 bar_colors_fn = []
-for i, v in enumerate(pct_of_top):
-    if i == 0:   bar_colors_fn.append("#334155")
-    elif i == 1: bar_colors_fn.append(C_BAD)       # 노출→클릭 병목
-    elif v >= 60: bar_colors_fn.append(C_GOOD)
-    elif v >= 20: bar_colors_fn.append("#2563eb")
-    else:         bar_colors_fn.append(C_WARN)
+for i, r in enumerate(step_conv_rates):
+    if i == 0:    bar_colors_fn.append("#334155")
+    elif r < 5:   bar_colors_fn.append(C_BAD)
+    elif r >= 70: bar_colors_fn.append(C_GOOD)
+    else:         bar_colors_fn.append("#2563eb")
 
-# 단계 간 전환율 레이블 (이전 단계 대비)
-step_conv = ["기준"]
-for i in range(1, len(vals)):
-    r = vals[i] / vals[i-1] * 100
-    step_conv.append(f"↓ {r:.1f}%")
+col1, col2 = st.columns([3, 2], gap="medium")
 
-fig = go.Figure()
-fig.add_trace(go.Bar(
-    y=FUNNEL_LABELS[::-1],
-    x=pct_of_top[::-1],
-    orientation='h',
-    marker=dict(
-        color=bar_colors_fn[::-1],
-        line=dict(color='white', width=1),
-    ),
-    text=[
-        f"<b>{fmt_num(v)}</b>  ({p:.1f}%)  {s}"
-        for v, p, s in zip(vals[::-1], pct_of_top[::-1], step_conv[::-1])
-    ],
-    textposition='inside',
-    insidetextanchor='start',
-    textfont=dict(size=12, color='white', family=PLOTLY_FONT['family']),
-    hovertemplate="<b>%{y}</b><br>수: %{customdata[0]}<br>노출 대비: %{x:.1f}%<extra></extra>",
-    customdata=[[fmt_num(v)] for v in vals[::-1]],
-))
+with col1:
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        y=FUNNEL_LABELS,
+        x=step_conv_rates,
+        orientation='h',
+        marker=dict(color=bar_colors_fn, line=dict(color='white', width=1)),
+        text=[
+            "기준 (100%)" if i == 0 else f"{r:.1f}%"
+            for i, r in enumerate(step_conv_rates)
+        ],
+        textposition='outside',
+        textfont=dict(size=12, color=C_TEXT, family=PLOTLY_FONT['family']),
+        width=0.6,
+        hovertemplate="<b>%{y}</b><br>이전 단계 대비: %{x:.1f}%<extra></extra>",
+    ))
+    # 병목 어노테이션 (노출→클릭)
+    fig.add_annotation(
+        x=step_conv_rates[1] + 3, y=1,
+        text=f"<b>최대 이탈 구간</b><br>{step_conv_rates[1]:.2f}%만 클릭",
+        showarrow=True, arrowhead=2, arrowcolor=C_BAD,
+        font=dict(size=10, color=C_BAD),
+        bgcolor="#fef2f2", bordercolor=C_BAD, borderwidth=1, borderpad=4,
+        ax=80, ay=0,
+    )
+    fig.add_vline(x=50, line_dash="dot", line_color="#cbd5e1", line_width=1,
+                  annotation_text=" 50%", annotation_font=dict(size=9, color=C_MUTED))
 
-# 병목 강조 어노테이션 (역순 리스트에서 광고 클릭의 인덱스 = len-2)
-bottleneck_idx = len(FUNNEL_LABELS) - 2
-fig.add_annotation(
-    x=pct_of_top[1] / 2, y=bottleneck_idx,
-    text=f"<b>핵심 병목 — CTR {vals[1]/vals[0]*100:.2f}%</b>",
-    showarrow=True, arrowhead=2, arrowcolor='white',
-    font=dict(size=11, color='white'),
-    ax=120, ay=0,
-)
+    layout = base_layout(height=380, margin=dict(l=10, r=120, t=36, b=10))
+    layout['title'] = dict(
+        text="단계별 전환율 — 이전 단계 대비 몇 %가 다음 단계로 이동했는가",
+        font=dict(size=12, color=C_MUTED), x=0
+    )
+    layout['xaxis']['title'] = "이전 단계 대비 전환율 (%)"
+    layout['xaxis']['ticksuffix'] = "%"
+    layout['xaxis']['range'] = [0, 130]
+    layout['yaxis']['showgrid'] = False
+    layout['showlegend'] = False
+    fig.update_layout(**layout)
+    st.plotly_chart(fig, use_container_width=True)
 
-layout = base_layout(height=400, margin=dict(l=10, r=20, t=36, b=10))
-layout['title'] = dict(
-    text="전체 마케팅 퍼널 — 각 막대: 절대 수 / 노출 대비 % / 이전 단계 대비 전환율",
-    font=dict(size=12, color=C_MUTED), x=0
-)
-layout['xaxis']['title'] = "노출 대비 비율 (%)"
-layout['xaxis']['ticksuffix'] = "%"
-layout['xaxis']['range'] = [0, 115]
-layout['yaxis']['showgrid'] = False
-layout['showlegend'] = False
-fig.update_layout(**layout)
-st.plotly_chart(fig, use_container_width=True)
-
-# 전환율 요약 행
-conv_cols = st.columns(len(dr_df))
-for col_c, (_, row) in zip(conv_cols, dr_df.iterrows()):
-    color = C_BAD if row['conv'] < 5 else C_GOOD if row['conv'] >= 70 else C_WARN
-    col_c.markdown(
-        f"<div style='text-align:center;padding:6px 4px;background:{C_BG};"
-        f"border-radius:6px;border:1px solid {C_BORDER}'>"
-        f"<div style='font-size:9px;color:{C_MUTED};margin-bottom:2px'>{row['stage']}</div>"
-        f"<div style='font-size:14px;font-weight:700;color:{color}'>{row['conv']:.1f}%</div>"
-        f"</div>",
+with col2:
+    # 절대 수치 테이블
+    st.markdown(
+        f"<div style='font-size:11px;font-weight:700;color:{C_MUTED};"
+        f"text-transform:uppercase;letter-spacing:.6px;margin-bottom:10px'>"
+        f"단계별 절대 수치</div>",
         unsafe_allow_html=True
     )
+    for i, (label, val) in enumerate(zip(FUNNEL_LABELS, vals)):
+        color = C_BAD if i == 1 else C_GOOD if step_conv_rates[i] >= 70 else C_TEXT
+        pct_first = val / vals[0] * 100
+        st.markdown(
+            f"<div style='display:flex;justify-content:space-between;align-items:center;"
+            f"padding:8px 10px;margin-bottom:4px;background:{C_BG};"
+            f"border-radius:6px;border-left:3px solid {bar_colors_fn[i]}'>"
+            f"<span style='font-size:11px;color:{C_MUTED}'>{label}</span>"
+            f"<span style='font-size:13px;font-weight:700;color:{color}'>{fmt_num(val)}"
+            f"<span style='font-size:10px;font-weight:400;color:{C_MUTED};margin-left:4px'>"
+            f"({pct_first:.2f}%)</span></span>"
+            f"</div>",
+            unsafe_allow_html=True
+        )
 
 finding(f"노출→클릭 전환율 {dr_df.iloc[0]['conv']:.2f}%가 최대 병목. "
         "클릭→설치(56%)·설치→실행(90%)은 이미 최적화 완료. "
