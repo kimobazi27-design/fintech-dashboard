@@ -563,23 +563,27 @@ col1, col2 = st.columns([3, 2], gap="medium")
 
 with col1:
     fig = go.Figure()
+    # 퍼널 순서: 광고노출이 맨 위 → 반복사용이 맨 아래 (뒤집어서 입력)
+    labels_r = FUNNEL_LABELS[::-1]
+    rates_r  = step_conv_rates[::-1]
+    colors_r = bar_colors_fn[::-1]
+    text_r   = (["기준 (100%)"] + [f"{r:.1f}%" for r in step_conv_rates[1:]])[::-1]
+
     fig.add_trace(go.Bar(
-        y=FUNNEL_LABELS,
-        x=step_conv_rates,
+        y=labels_r,
+        x=rates_r,
         orientation='h',
-        marker=dict(color=bar_colors_fn, line=dict(color='white', width=1)),
-        text=[
-            "기준 (100%)" if i == 0 else f"{r:.1f}%"
-            for i, r in enumerate(step_conv_rates)
-        ],
+        marker=dict(color=colors_r, line=dict(color='white', width=1)),
+        text=text_r,
         textposition='outside',
         textfont=dict(size=12, color=C_TEXT, family=PLOTLY_FONT['family']),
         width=0.6,
         hovertemplate="<b>%{y}</b><br>이전 단계 대비: %{x:.1f}%<extra></extra>",
     ))
-    # 병목 어노테이션 (노출→클릭)
+    # 병목 어노테이션 — 역순에서 '광고 클릭'은 맨 위에서 두 번째 = index len-2
     fig.add_annotation(
-        x=step_conv_rates[1] + 3, y=1,
+        x=step_conv_rates[1] + 3,
+        y=len(FUNNEL_LABELS) - 2,
         text=f"<b>최대 이탈 구간</b><br>{step_conv_rates[1]:.2f}%만 클릭",
         showarrow=True, arrowhead=2, arrowcolor=C_BAD,
         font=dict(size=10, color=C_BAD),
