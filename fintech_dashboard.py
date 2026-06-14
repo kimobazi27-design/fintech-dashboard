@@ -346,6 +346,322 @@ st.markdown(f"""
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# 성과 개요 탭 — 캠페인별 성과 / CVR 분석 / 메트릭 하이어라키
+# ══════════════════════════════════════════════════════════════════════════════
+tab_campaign, tab_cvr, tab_hierarchy = st.tabs([
+    "📋 캠페인별 성과", "🔁 CVR 분석", "📐 메트릭 하이어라키"
+])
+
+# ── 탭 1: 캠페인별 성과 ───────────────────────────────────────────────────────
+with tab_campaign:
+    camp = d.groupby(['campaign_id','channel','campaign_objective']).agg(
+        광고비=('광고비','sum'),
+        광고노출=('광고노출','sum'),
+        광고클릭=('광고클릭','sum'),
+        앱설치=('앱설치','sum'),
+        회원가입=('회원가입','sum'),
+        계좌개설=('계좌개설','sum'),
+        첫거래=('첫거래','sum'),
+    ).reset_index()
+    camp['CTR']  = camp['광고클릭'] / camp['광고노출'] * 100
+    camp['CVR']  = camp['회원가입'] / camp['광고클릭'].replace(0, np.nan) * 100
+    camp['CPA']  = camp['광고비']   / camp['회원가입'].replace(0, np.nan)
+    camp['설치율'] = camp['앱설치'] / camp['광고클릭'].replace(0, np.nan) * 100
+    camp = camp.sort_values('광고비', ascending=False)
+
+    # 상단 요약 지표
+    mc1, mc2, mc3, mc4 = st.columns(4)
+    mc1.metric("총 캠페인 수", f"{camp['campaign_id'].nunique()}개")
+    mc2.metric("평균 CTR", f"{camp['CTR'].mean():.2f}%")
+    mc3.metric("평균 CVR", f"{camp['CVR'].mean():.2f}%")
+    mc4.metric("평균 CPA", f"₩{camp['CPA'].mean():,.0f}")
+
+    st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+
+    # CPA 기준 막대 차트 — 상위 15개
+    top_camp = camp.nsmallest(15, 'CPA')
+    avg_camp_cpa = camp['CPA'].mean()
+
+    fig_c = go.Figure()
+    bar_c_colors = [C_GOOD if v < avg_camp_cpa else C_BAD for v in top_camp['CPA']]
+    fig_c.add_trace(go.Bar(
+        x=top_camp['campaign_id'],
+        y=top_camp['CPA'],
+        marker_color=bar_c_colors,
+        text=[f"₩{v:,.0f}" for v in top_camp['CPA']],
+        textposition='outside',
+        textfont=dict(size=10, color=C_TEXT),
+        width=0.6,
+        customdata=top_camp[['channel','campaign_objective','광고비']].values,
+        hovertemplate="<b>%{x}</b><br>채널: %{customdata[0]}<br>목적: %{customdata[1]}<br>CPA: ₩%{y:,.0f}<br>광고비: ₩%{customdata[2]:,.0f}<extra></extra>",
+    ))
+    fig_c.add_hline(y=avg_camp_cpa, line_dash="dot", line_color=C_MUTED, line_width=1.5,
+                    annotation_text=f" 평균 CPA ₩{avg_camp_cpa:,.0f}",
+                    annotation_font=dict(size=9, color=C_MUTED))
+    layout_c = base_layout(height=320, margin=dict(l=10, r=10, t=36, b=80))
+    layout_c['title'] = dict(text="캠페인별 CPA 순위 (상위 15개, 낮을수록 우수)", font=dict(size=12, color=C_MUTED), x=0)
+    layout_c['xaxis']['tickangle'] = -35
+    layout_c['xaxis']['tickfont']['size'] = 9
+    layout_c['yaxis']['title'] = "CPA (원)"
+    layout_c['yaxis']['tickformat'] = ","
+    layout_c['showlegend'] = False
+    fig_c.update_layout(**layout_c)
+    st.plotly_chart(fig_c, use_container_width=True)
+
+    # 캠페인별 CTR vs CVR 버블
+    fig_c2 = go.Figure()
+    for ch_name in camp['channel'].unique():
+        sub = camp[camp['channel'] == ch_name].dropna(subset=['CTR','CVR'])
+        c = C_CH.get(ch_name, C_ACCENT)
+        fig_c2.add_trace(go.Scatter(
+            x=sub['CTR'], y=sub['CVR'],
+            mode='markers', name=ch_name,
+            marker=dict(
+                size=np.sqrt(sub['광고비'] / sub['광고비'].max()) * 30 + 6,
+                color=c, opacity=0.7, line=dict(color='white', width=1)
+            ),
+            hovertemplate="<b>%{customdata[0]}</b><br>CTR: %{x:.2f}%<br>CVR: %{y:.2f}%<extra></extra>",
+            customdata=sub[['campaign_id']].values,
+        ))
+    layout_c2 = base_layout(height=300, margin=dict(l=10, r=10, t=36, b=10))
+    layout_c2['title'] = dict(text="캠페인별 CTR vs CVR 포지셔닝 (버블 크기 = 광고비)", font=dict(size=12, color=C_MUTED), x=0)
+    layout_c2['xaxis']['title'] = "CTR (%)"
+    layout_c2['yaxis']['title'] = "CVR (%)"
+    layout_c2['xaxis']['ticksuffix'] = "%"
+    layout_c2['yaxis']['ticksuffix'] = "%"
+    fig_c2.update_layout(**layout_c2)
+    st.plotly_chart(fig_c2, use_container_width=True)
+
+    # 상세 테이블
+    with st.expander("전체 캠페인 상세 데이터"):
+        disp = camp[['campaign_id','channel','campaign_objective','광고비','광고노출','광고클릭','CTR','설치율','CVR','CPA','회원가입','첫거래']].copy()
+        disp['CTR']  = disp['CTR'].round(2)
+        disp['CVR']  = disp['CVR'].round(2)
+        disp['설치율'] = disp['설치율'].round(2)
+        disp['CPA']  = disp['CPA'].round(0)
+        st.dataframe(
+            disp.sort_values('광고비', ascending=False),
+            use_container_width=True, hide_index=True,
+            column_config={
+                '광고비':  st.column_config.NumberColumn("광고비(원)", format="₩%d"),
+                'CPA':    st.column_config.NumberColumn("CPA(원)",  format="₩%d"),
+                'CTR':    st.column_config.NumberColumn("CTR(%)",   format="%.2f%%"),
+                'CVR':    st.column_config.NumberColumn("CVR(%)",   format="%.2f%%"),
+                '설치율': st.column_config.NumberColumn("설치율(%)", format="%.2f%%"),
+            }
+        )
+
+
+# ── 탭 2: CVR 분석 ───────────────────────────────────────────────────────────
+with tab_cvr:
+    # CVR = 클릭 → 회원가입 (마케팅 CVR 정의)
+    cvr_click_to_install  = d['앱설치'].sum()   / d['광고클릭'].sum() * 100
+    cvr_install_to_run    = d['앱실행'].sum()    / d['앱설치'].sum()   * 100
+    cvr_run_to_join       = d['회원가입'].sum()  / d['앱실행'].sum()   * 100
+    cvr_join_to_account   = d['계좌개설'].sum()  / d['회원가입'].sum() * 100
+    cvr_account_to_trade  = d['첫거래'].sum()    / d['계좌개설'].sum() * 100
+    cvr_trade_to_repeat   = d['반복사용'].sum()  / d['첫거래'].sum()   * 100
+    cvr_overall           = d['회원가입'].sum()  / d['광고클릭'].sum() * 100
+
+    # CVR 요약 카드
+    cv1, cv2, cv3, cv4 = st.columns(4)
+    cv1.metric("전체 CVR", f"{cvr_overall:.2f}%", help="클릭 → 회원가입")
+    cv2.metric("클릭→설치", f"{cvr_click_to_install:.1f}%")
+    cv3.metric("설치→실행", f"{cvr_install_to_run:.1f}%")
+    cv4.metric("실행→가입", f"{cvr_run_to_join:.1f}%")
+
+    cv5, cv6, cv7, cv8 = st.columns(4)
+    cv5.metric("가입→계좌", f"{cvr_join_to_account:.1f}%")
+    cv6.metric("계좌→첫거래", f"{cvr_account_to_trade:.1f}%")
+    cv7.metric("첫거래→반복", f"{cvr_trade_to_repeat:.1f}%")
+    cv8.metric("클릭 대비 반복사용", f"{d['반복사용'].sum()/d['광고클릭'].sum()*100:.2f}%", help="최종 LTV 유저 비율")
+
+    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+
+    col1, col2 = st.columns(2, gap="medium")
+
+    with col1:
+        # 채널별 CVR 비교
+        cvr_ch = d.groupby('channel').agg(
+            광고클릭=('광고클릭','sum'), 앱설치=('앱설치','sum'),
+            앱실행=('앱실행','sum'), 회원가입=('회원가입','sum'),
+            계좌개설=('계좌개설','sum'), 첫거래=('첫거래','sum')
+        ).reset_index()
+        cvr_ch['클릭→설치'] = cvr_ch['앱설치']   / cvr_ch['광고클릭'] * 100
+        cvr_ch['설치→실행'] = cvr_ch['앱실행']    / cvr_ch['앱설치']   * 100
+        cvr_ch['실행→가입'] = cvr_ch['회원가입']  / cvr_ch['앱실행']   * 100
+        cvr_ch['가입→계좌'] = cvr_ch['계좌개설']  / cvr_ch['회원가입'] * 100
+        cvr_ch['계좌→거래'] = cvr_ch['첫거래']    / cvr_ch['계좌개설'] * 100
+
+        cvr_melt = cvr_ch.melt(
+            id_vars='channel',
+            value_vars=['클릭→설치','설치→실행','실행→가입','가입→계좌','계좌→거래'],
+            var_name='전환 구간', value_name='CVR'
+        )
+        fig_cvr = go.Figure()
+        for ch_name in cvr_ch['channel'].unique():
+            sub = cvr_melt[cvr_melt['channel'] == ch_name]
+            c = C_CH.get(ch_name, C_ACCENT)
+            fig_cvr.add_trace(go.Bar(
+                name=ch_name, x=sub['전환 구간'], y=sub['CVR'],
+                marker_color=c, opacity=0.85,
+                text=[f"{v:.1f}%" for v in sub['CVR']],
+                textposition='outside', textfont=dict(size=9),
+            ))
+        layout_cvr = base_layout(height=320)
+        layout_cvr['title'] = dict(text="채널별 단계별 CVR 비교", font=dict(size=12, color=C_MUTED), x=0)
+        layout_cvr['barmode'] = 'group'
+        layout_cvr['yaxis']['title'] = "CVR (%)"
+        layout_cvr['yaxis']['ticksuffix'] = "%"
+        layout_cvr['legend'] = dict(font=dict(size=10), orientation='h', y=1.08)
+        layout_cvr['xaxis']['tickfont']['size'] = 10
+        fig_cvr.update_layout(**layout_cvr)
+        st.plotly_chart(fig_cvr, use_container_width=True)
+
+    with col2:
+        # 소재별 CVR
+        cvr_fmt = d.groupby('creative_format').agg(
+            광고클릭=('광고클릭','sum'), 회원가입=('회원가입','sum'),
+            앱설치=('앱설치','sum'), 계좌개설=('계좌개설','sum')
+        ).reset_index()
+        cvr_fmt['클릭→설치'] = cvr_fmt['앱설치']   / cvr_fmt['광고클릭'] * 100
+        cvr_fmt['클릭→가입'] = cvr_fmt['회원가입']  / cvr_fmt['광고클릭'] * 100
+        cvr_fmt['클릭→계좌'] = cvr_fmt['계좌개설']  / cvr_fmt['광고클릭'] * 100
+
+        cvr_fmt_melt = cvr_fmt.melt(
+            id_vars='creative_format',
+            value_vars=['클릭→설치','클릭→가입','클릭→계좌'],
+            var_name='전환 구간', value_name='CVR'
+        )
+        fig_cvr2 = go.Figure()
+        stage_colors = {'클릭→설치': '#2563eb', '클릭→가입': C_GOOD, '클릭→계좌': C_WARN}
+        for stage in ['클릭→설치','클릭→가입','클릭→계좌']:
+            sub = cvr_fmt_melt[cvr_fmt_melt['전환 구간'] == stage]
+            fig_cvr2.add_trace(go.Bar(
+                name=stage, x=sub['creative_format'], y=sub['CVR'],
+                marker_color=stage_colors[stage], opacity=0.85,
+                text=[f"{v:.1f}%" for v in sub['CVR']],
+                textposition='outside', textfont=dict(size=9),
+            ))
+        layout_cvr2 = base_layout(height=320)
+        layout_cvr2['title'] = dict(text="소재 포맷별 CVR (클릭 기준)", font=dict(size=12, color=C_MUTED), x=0)
+        layout_cvr2['barmode'] = 'group'
+        layout_cvr2['yaxis']['title'] = "CVR (%)"
+        layout_cvr2['yaxis']['ticksuffix'] = "%"
+        layout_cvr2['legend'] = dict(font=dict(size=10), orientation='h', y=1.08)
+        fig_cvr2.update_layout(**layout_cvr2)
+        st.plotly_chart(fig_cvr2, use_container_width=True)
+
+    # 월별 CVR 트렌드
+    cvr_mon = d.groupby('month_label').agg(
+        광고클릭=('광고클릭','sum'), 회원가입=('회원가입','sum'),
+        앱설치=('앱설치','sum'), 첫거래=('첫거래','sum')
+    ).reset_index()
+    cvr_mon['month_num'] = cvr_mon['month_label'].str.replace('월','').astype(int)
+    cvr_mon = cvr_mon.sort_values('month_num')
+    cvr_mon['클릭→설치'] = cvr_mon['앱설치']   / cvr_mon['광고클릭'] * 100
+    cvr_mon['클릭→가입'] = cvr_mon['회원가입']  / cvr_mon['광고클릭'] * 100
+    cvr_mon['클릭→거래'] = cvr_mon['첫거래']    / cvr_mon['광고클릭'] * 100
+
+    fig_cvr3 = go.Figure()
+    for col_name, color in [('클릭→설치','#2563eb'),('클릭→가입',C_GOOD),('클릭→거래',C_WARN)]:
+        fig_cvr3.add_trace(go.Scatter(
+            x=cvr_mon['month_label'], y=cvr_mon[col_name],
+            name=col_name, mode='lines+markers',
+            line=dict(color=color, width=2),
+            marker=dict(size=6, color=color),
+        ))
+    layout_cvr3 = base_layout(height=280)
+    layout_cvr3['title'] = dict(text="월별 CVR 추이 (클릭 기준)", font=dict(size=12, color=C_MUTED), x=0)
+    layout_cvr3['yaxis']['title'] = "CVR (%)"
+    layout_cvr3['yaxis']['ticksuffix'] = "%"
+    layout_cvr3['legend'] = dict(font=dict(size=10), orientation='h', y=1.08)
+    fig_cvr3.update_layout(**layout_cvr3)
+    st.plotly_chart(fig_cvr3, use_container_width=True)
+
+
+# ── 탭 3: 메트릭 하이어라키 ──────────────────────────────────────────────────
+with tab_hierarchy:
+    st.markdown(
+        f"<div style='font-size:12px;color:{C_MUTED};margin-bottom:16px'>"
+        "광고 노출부터 반복사용까지 각 지표가 어떻게 연결되는지 보여주는 구조도입니다. "
+        "Sankey 차트의 흐름 굵기 = 실제 유저 수 비례</div>",
+        unsafe_allow_html=True
+    )
+
+    # Sankey diagram
+    funnel_vals_h = [d[c].sum() for c in ['광고노출','광고클릭','앱설치','앱실행','회원가입','계좌개설','첫거래','반복사용']]
+    labels_h = ['광고 노출','광고 클릭','앱 설치','앱 실행','회원 가입','계좌 개설','첫 거래','반복 사용','이탈']
+
+    # 노드 인덱스: 0~7 = 퍼널 단계, 8 = 이탈
+    source, target, value, link_color = [], [], [], []
+    stage_colors_h = ['#334155','#dc2626','#2563eb','#3b82f6','#059669','#10b981','#34d399','#6ee7b7']
+
+    for i in range(len(funnel_vals_h) - 1):
+        converted = funnel_vals_h[i+1]
+        dropped   = funnel_vals_h[i] - funnel_vals_h[i+1]
+        # 전환 흐름
+        source.append(i); target.append(i+1); value.append(int(converted))
+        link_color.append(f"rgba(5,150,105,0.3)")
+        # 이탈 흐름
+        source.append(i); target.append(8); value.append(int(dropped))
+        link_color.append(f"rgba(220,38,38,0.15)")
+
+    node_colors = stage_colors_h + ['#94a3b8']  # 이탈 노드 = 회색
+
+    fig_sankey = go.Figure(go.Sankey(
+        arrangement='snap',
+        node=dict(
+            pad=20, thickness=24,
+            line=dict(color='white', width=0.5),
+            label=[f"{l}\n{fmt_num(v)}" if i < 8 else "이탈"
+                   for i, (l, v) in enumerate(zip(labels_h[:8], funnel_vals_h))] + ['이탈'],
+            color=node_colors,
+            hovertemplate="%{label}<extra></extra>",
+        ),
+        link=dict(
+            source=source, target=target, value=value,
+            color=link_color,
+            hovertemplate="<b>%{source.label}</b> → <b>%{target.label}</b><br>%{value:,}명<extra></extra>",
+        ),
+    ))
+    fig_sankey.update_layout(
+        height=480,
+        font=PLOTLY_FONT,
+        paper_bgcolor=C_SURFACE,
+        margin=dict(l=10, r=10, t=36, b=10),
+        title=dict(text="메트릭 하이어라키 — 유저 흐름 Sankey 차트 (초록=전환, 빨강=이탈)", font=dict(size=12, color=C_MUTED), x=0),
+    )
+    st.plotly_chart(fig_sankey, use_container_width=True)
+
+    # 지표 연결 구조 요약
+    st.markdown(f"<div style='font-size:11px;font-weight:700;color:{C_MUTED};text-transform:uppercase;letter-spacing:.6px;margin:16px 0 10px'>지표 연결 구조 요약</div>", unsafe_allow_html=True)
+
+    hier_cols = st.columns(7)
+    hier_data = [
+        ("노출→클릭", f"{d['광고클릭'].sum()/d['광고노출'].sum()*100:.2f}%", "CTR", C_BAD),
+        ("클릭→설치", f"{d['앱설치'].sum()/d['광고클릭'].sum()*100:.1f}%", "설치율", '#2563eb'),
+        ("설치→실행", f"{d['앱실행'].sum()/d['앱설치'].sum()*100:.1f}%", "실행율", '#2563eb'),
+        ("실행→가입", f"{d['회원가입'].sum()/d['앱실행'].sum()*100:.1f}%", "CVR", C_GOOD),
+        ("가입→계좌", f"{d['계좌개설'].sum()/d['회원가입'].sum()*100:.1f}%", "계좌CVR", C_GOOD),
+        ("계좌→거래", f"{d['첫거래'].sum()/d['계좌개설'].sum()*100:.1f}%", "거래CVR", C_WARN),
+        ("거래→반복", f"{d['반복사용'].sum()/d['첫거래'].sum()*100:.1f}%", "리텐션", C_WARN),
+    ]
+    for col_h, (stage, rate, label, color) in zip(hier_cols, hier_data):
+        col_h.markdown(
+            f"<div style='text-align:center;padding:10px 4px;background:{C_BG};"
+            f"border-radius:8px;border-top:3px solid {color}'>"
+            f"<div style='font-size:9px;color:{C_MUTED};margin-bottom:4px'>{label}</div>"
+            f"<div style='font-size:16px;font-weight:700;color:{color}'>{rate}</div>"
+            f"<div style='font-size:9px;color:{C_MUTED};margin-top:3px'>{stage}</div>"
+            f"</div>",
+            unsafe_allow_html=True
+        )
+
+st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+st.markdown(f"<hr style='border:none;border-top:1px solid {C_BORDER};margin:0 0 20px'>", unsafe_allow_html=True)
+
+# ══════════════════════════════════════════════════════════════════════════════
 # INSIGHT 01 · 채널별 비용 효율 격차
 # ══════════════════════════════════════════════════════════════════════════════
 st.markdown("<div class='insight-block'>", unsafe_allow_html=True)
