@@ -21,7 +21,7 @@ C_GOOD     = "#059669"   # emerald-600
 C_WARN     = "#d97706"   # amber-600
 C_BAD      = "#dc2626"   # red-600
 C_ACCENT   = "#2563eb"   # blue-600
-C_CH = {"네이버": "#059669", "라이브커머스": "#2563eb", "유튜브프리롤": "#d97706"}
+C_CH = {"구글": "#059669", "페이스북": "#2563eb", "네이버검색": "#d97706"}
 C_FMT = {"브랜드키워드": "#059669", "일반키워드": "#2563eb", "이미지": "#9333ea", "영상": "#d97706"}
 PLOTLY_FONT = dict(family="'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif", color=C_TEXT)
 
@@ -582,81 +582,164 @@ with tab_cvr:
 
 # ── 탭 3: 메트릭 하이어라키 ──────────────────────────────────────────────────
 with tab_hierarchy:
+    fv = {c: d[c].sum() for c in ['광고노출','광고클릭','앱설치','앱실행','회원가입','계좌개설','첫거래','반복사용','자동이체설정','추천완료']}
+
+    # 단계별 전환율 계산
+    ctr   = fv['광고클릭']   / fv['광고노출']   * 100
+    ir    = fv['앱설치']     / fv['광고클릭']   * 100
+    er    = fv['앱실행']     / fv['앱설치']     * 100
+    cvr   = fv['회원가입']   / fv['앱실행']     * 100
+    acvr  = fv['계좌개설']   / fv['회원가입']   * 100
+    tcvr  = fv['첫거래']     / fv['계좌개설']   * 100
+    ret   = fv['반복사용']   / fv['첫거래']     * 100
+    auto  = fv['자동이체설정'] / fv['회원가입']  * 100
+    rec   = fv['추천완료']   / fv['회원가입']   * 100
+
+    def rate_color(r, threshold_bad=10, threshold_ok=60):
+        if r < threshold_bad: return C_BAD
+        if r < threshold_ok:  return C_WARN
+        return C_GOOD
+
+    # ── HTML 흐름 다이어그램 ──────────────────────────────────────────────────
+    # 각 노드: 단계명 / 절대수 / 누적 유지율
+    # 각 연결: 지표명 + 전환율 (색상 코딩)
+    stages = [
+        ("광고 노출",   fv['광고노출'],   "#334155", None,    None),
+        ("광고 클릭",   fv['광고클릭'],   C_BAD,     "CTR",   f"{ctr:.2f}%"),
+        ("앱 설치",     fv['앱설치'],     "#2563eb", "설치율", f"{ir:.1f}%"),
+        ("앱 실행",     fv['앱실행'],     "#2563eb", "실행율", f"{er:.1f}%"),
+        ("회원 가입",   fv['회원가입'],   C_GOOD,    "CVR",   f"{cvr:.1f}%"),
+        ("계좌 개설",   fv['계좌개설'],   C_GOOD,    "계좌전환", f"{acvr:.1f}%"),
+        ("첫 거래",     fv['첫거래'],     C_WARN,    "거래전환", f"{tcvr:.1f}%"),
+        ("반복 사용",   fv['반복사용'],   C_WARN,    "리텐션", f"{ret:.1f}%"),
+    ]
+
+    # Row 1: 광고노출 → 광고클릭 → 앱설치 → 앱실행 (4단계)
+    # Row 2: 회원가입 → 계좌개설 → 첫거래 → 반복사용 (4단계)
+    def node_html(label, val, color, pct_of_start):
+        pct_str = f"<div style='font-size:10px;color:#94a3b8;margin-top:2px'>노출 대비 {pct_of_start:.2f}%</div>" if pct_of_start is not None else ""
+        return f"""
+        <div style='background:{color};border-radius:10px;padding:14px 12px;
+             text-align:center;min-width:110px;flex:1;box-shadow:0 2px 8px rgba(0,0,0,0.15)'>
+          <div style='font-size:10px;font-weight:700;color:rgba(255,255,255,0.75);
+               text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px'>{label}</div>
+          <div style='font-size:18px;font-weight:700;color:white;letter-spacing:-0.5px'>{fmt_num(val)}</div>
+          {pct_str}
+        </div>"""
+
+    def arrow_html(metric, rate, color):
+        arrow_col = color if color != "#334155" else "#94a3b8"
+        return f"""
+        <div style='display:flex;flex-direction:column;align-items:center;
+             justify-content:center;padding:0 6px;min-width:72px'>
+          <div style='font-size:9px;font-weight:700;color:{arrow_col};
+               text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px'>{metric}</div>
+          <div style='font-size:15px;font-weight:800;color:{arrow_col}'>{rate}</div>
+          <div style='font-size:18px;color:#cbd5e1;line-height:1'>→</div>
+        </div>"""
+
+    # Row HTML 생성
+    def build_row(stage_slice):
+        html = "<div style='display:flex;align-items:center;gap:0;margin-bottom:12px'>"
+        for i, (label, val, color, metric, rate) in enumerate(stage_slice):
+            pct = val / fv['광고노출'] * 100 if label != "광고 노출" else None
+            html += node_html(label, val, color, pct)
+            if i < len(stage_slice) - 1:
+                next_metric = stage_slice[i+1][3]
+                next_rate   = stage_slice[i+1][4]
+                next_color  = stage_slice[i+1][2]
+                html += arrow_html(next_metric, next_rate, next_color)
+        html += "</div>"
+        return html
+
+    row1_html = build_row(stages[:4])
+    row2_html = build_row(stages[4:])
+
     st.markdown(
-        f"<div style='font-size:12px;color:{C_MUTED};margin-bottom:16px'>"
-        "광고 노출부터 반복사용까지 각 지표가 어떻게 연결되는지 보여주는 구조도입니다. "
-        "Sankey 차트의 흐름 굵기 = 실제 유저 수 비례</div>",
+        f"<div style='background:{C_BG};border:1px solid {C_BORDER};"
+        f"border-radius:12px;padding:20px 16px'>"
+        f"<div style='font-size:10px;font-weight:700;color:{C_MUTED};text-transform:uppercase;"
+        f"letter-spacing:.7px;margin-bottom:14px'>광고 유입 단계 (노출 → 앱 실행)</div>"
+        f"{row1_html}"
+        f"<div style='font-size:10px;font-weight:700;color:{C_MUTED};text-transform:uppercase;"
+        f"letter-spacing:.7px;margin:18px 0 14px'>전환 및 활성화 단계 (회원가입 → 반복사용)</div>"
+        f"{row2_html}"
+        f"</div>",
         unsafe_allow_html=True
     )
 
-    # Sankey diagram
-    funnel_vals_h = [d[c].sum() for c in ['광고노출','광고클릭','앱설치','앱실행','회원가입','계좌개설','첫거래','반복사용']]
-    labels_h = ['광고 노출','광고 클릭','앱 설치','앱 실행','회원 가입','계좌 개설','첫 거래','반복 사용','이탈']
+    st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
 
-    # 노드 인덱스: 0~7 = 퍼널 단계, 8 = 이탈
-    source, target, value, link_color = [], [], [], []
-    stage_colors_h = ['#334155','#dc2626','#2563eb','#3b82f6','#059669','#10b981','#34d399','#6ee7b7']
-
-    for i in range(len(funnel_vals_h) - 1):
-        converted = funnel_vals_h[i+1]
-        dropped   = funnel_vals_h[i] - funnel_vals_h[i+1]
-        # 전환 흐름
-        source.append(i); target.append(i+1); value.append(int(converted))
-        link_color.append(f"rgba(5,150,105,0.3)")
-        # 이탈 흐름
-        source.append(i); target.append(8); value.append(int(dropped))
-        link_color.append(f"rgba(220,38,38,0.15)")
-
-    node_colors = stage_colors_h + ['#94a3b8']  # 이탈 노드 = 회색
-
-    fig_sankey = go.Figure(go.Sankey(
-        arrangement='snap',
-        node=dict(
-            pad=20, thickness=24,
-            line=dict(color='white', width=0.5),
-            label=[f"{l}\n{fmt_num(v)}" if i < 8 else "이탈"
-                   for i, (l, v) in enumerate(zip(labels_h[:8], funnel_vals_h))] + ['이탈'],
-            color=node_colors,
-            hovertemplate="%{label}<extra></extra>",
-        ),
-        link=dict(
-            source=source, target=target, value=value,
-            color=link_color,
-            hovertemplate="<b>%{source.label}</b> → <b>%{target.label}</b><br>%{value:,}명<extra></extra>",
-        ),
-    ))
-    fig_sankey.update_layout(
-        height=480,
-        font=PLOTLY_FONT,
-        paper_bgcolor=C_SURFACE,
-        margin=dict(l=10, r=10, t=36, b=10),
-        title=dict(text="메트릭 하이어라키 — 유저 흐름 Sankey 차트 (초록=전환, 빨강=이탈)", font=dict(size=12, color=C_MUTED), x=0),
+    # ── 하단: 핵심 지표 3열 요약 ─────────────────────────────────────────────
+    st.markdown(
+        f"<div style='font-size:10px;font-weight:700;color:{C_MUTED};"
+        f"text-transform:uppercase;letter-spacing:.7px;margin-bottom:12px'>"
+        f"활성화 지표 (회원가입 이후)</div>",
+        unsafe_allow_html=True
     )
-    st.plotly_chart(fig_sankey, use_container_width=True)
-
-    # 지표 연결 구조 요약
-    st.markdown(f"<div style='font-size:11px;font-weight:700;color:{C_MUTED};text-transform:uppercase;letter-spacing:.6px;margin:16px 0 10px'>지표 연결 구조 요약</div>", unsafe_allow_html=True)
-
-    hier_cols = st.columns(7)
-    hier_data = [
-        ("노출→클릭", f"{d['광고클릭'].sum()/d['광고노출'].sum()*100:.2f}%", "CTR", C_BAD),
-        ("클릭→설치", f"{d['앱설치'].sum()/d['광고클릭'].sum()*100:.1f}%", "설치율", '#2563eb'),
-        ("설치→실행", f"{d['앱실행'].sum()/d['앱설치'].sum()*100:.1f}%", "실행율", '#2563eb'),
-        ("실행→가입", f"{d['회원가입'].sum()/d['앱실행'].sum()*100:.1f}%", "CVR", C_GOOD),
-        ("가입→계좌", f"{d['계좌개설'].sum()/d['회원가입'].sum()*100:.1f}%", "계좌CVR", C_GOOD),
-        ("계좌→거래", f"{d['첫거래'].sum()/d['계좌개설'].sum()*100:.1f}%", "거래CVR", C_WARN),
-        ("거래→반복", f"{d['반복사용'].sum()/d['첫거래'].sum()*100:.1f}%", "리텐션", C_WARN),
-    ]
-    for col_h, (stage, rate, label, color) in zip(hier_cols, hier_data):
-        col_h.markdown(
-            f"<div style='text-align:center;padding:10px 4px;background:{C_BG};"
-            f"border-radius:8px;border-top:3px solid {color}'>"
-            f"<div style='font-size:9px;color:{C_MUTED};margin-bottom:4px'>{label}</div>"
-            f"<div style='font-size:16px;font-weight:700;color:{color}'>{rate}</div>"
-            f"<div style='font-size:9px;color:{C_MUTED};margin-top:3px'>{stage}</div>"
+    ha1, ha2, ha3, ha4 = st.columns(4)
+    for col_a, (label, val, metric, color) in zip(
+        [ha1, ha2, ha3, ha4],
+        [
+            ("자동이체 설정", fv['자동이체설정'], f"{auto:.1f}%", C_ACCENT),
+            ("추천 완료",     fv['추천완료'],     f"{rec:.1f}%",  C_ACCENT),
+            ("첫거래 전환율", fv['첫거래'],       f"{fv['첫거래']/fv['회원가입']*100:.1f}%", C_WARN),
+            ("최종 잔존율 (노출→반복)", fv['반복사용'], f"{fv['반복사용']/fv['광고노출']*100:.4f}%", C_MUTED),
+        ]
+    ):
+        col_a.markdown(
+            f"<div style='background:{C_SURFACE};border:1px solid {C_BORDER};"
+            f"border-radius:8px;padding:14px 16px;border-top:3px solid {color}'>"
+            f"<div style='font-size:10px;color:{C_MUTED};margin-bottom:6px'>{label}</div>"
+            f"<div style='font-size:20px;font-weight:700;color:{color}'>{metric}</div>"
+            f"<div style='font-size:11px;color:{C_MUTED};margin-top:3px'>{fmt_num(val)}명</div>"
             f"</div>",
             unsafe_allow_html=True
         )
+
+    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+
+    # ── 채널별 메트릭 하이어라키 비교 (CTR/CVR/리텐션) ──────────────────────
+    st.markdown(
+        f"<div style='font-size:10px;font-weight:700;color:{C_MUTED};"
+        f"text-transform:uppercase;letter-spacing:.7px;margin:16px 0 12px'>"
+        f"채널별 핵심 지표 비교</div>",
+        unsafe_allow_html=True
+    )
+    ch_hier = d.groupby('channel').agg(
+        광고노출=('광고노출','sum'), 광고클릭=('광고클릭','sum'),
+        앱실행=('앱실행','sum'), 회원가입=('회원가입','sum'),
+        첫거래=('첫거래','sum'), 반복사용=('반복사용','sum')
+    ).reset_index()
+    ch_hier['CTR']  = ch_hier['광고클릭']  / ch_hier['광고노출']  * 100
+    ch_hier['CVR']  = ch_hier['회원가입']  / ch_hier['앱실행']    * 100
+    ch_hier['거래율'] = ch_hier['첫거래']  / ch_hier['회원가입']  * 100
+    ch_hier['리텐션'] = ch_hier['반복사용'] / ch_hier['첫거래']   * 100
+
+    fig_hier = go.Figure()
+    metrics_hier = ['CTR','CVR','거래율','리텐션']
+    colors_hier  = [C_BAD, C_GOOD, C_WARN, C_ACCENT]
+    for ch_name in ch_hier['channel']:
+        row = ch_hier[ch_hier['channel'] == ch_name].iloc[0]
+        c = C_CH.get(ch_name, C_ACCENT)
+        fig_hier.add_trace(go.Scatter(
+            x=metrics_hier,
+            y=[row['CTR'], row['CVR'], row['거래율'], row['리텐션']],
+            mode='lines+markers+text',
+            name=ch_name,
+            line=dict(color=c, width=2.5),
+            marker=dict(size=10, color=c, line=dict(color='white', width=2)),
+            text=[f"{row['CTR']:.2f}%", f"{row['CVR']:.1f}%", f"{row['거래율']:.1f}%", f"{row['리텐션']:.1f}%"],
+            textposition='top center',
+            textfont=dict(size=10, color=c),
+        ))
+    layout_hier = base_layout(height=300)
+    layout_hier['title'] = dict(text="채널별 핵심 전환 지표 비교 (CTR → CVR → 거래율 → 리텐션)", font=dict(size=12, color=C_MUTED), x=0)
+    layout_hier['yaxis']['title'] = "전환율 (%)"
+    layout_hier['yaxis']['ticksuffix'] = "%"
+    layout_hier['legend'] = dict(font=dict(size=11), orientation='h', y=1.1)
+    fig_hier.update_layout(**layout_hier)
+    st.plotly_chart(fig_hier, use_container_width=True)
 
 st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
 st.markdown(f"<hr style='border:none;border-top:1px solid {C_BORDER};margin:0 0 20px'>", unsafe_allow_html=True)
@@ -665,7 +748,7 @@ st.markdown(f"<hr style='border:none;border-top:1px solid {C_BORDER};margin:0 0 
 # INSIGHT 01 · 채널별 비용 효율 격차
 # ══════════════════════════════════════════════════════════════════════════════
 st.markdown("<div class='insight-block'>", unsafe_allow_html=True)
-insight_card(1, "네이버는 CPA ₩900으로 라이브커머스(₩3,280)의 1/4 비용으로 회원을 획득한다",
+insight_card(1, "구글이 CPA ₩900으로 페이스북(₩3,280)의 1/3 비용으로 회원을 획득한다",
              "채널별 CPA, CTR, 예산 배분의 3차원 비교")
 
 ch = d.groupby('channel').agg(
@@ -737,8 +820,8 @@ with col2:
                         text="저CTR·저CPA", font=dict(size=9, color=C_GOOD), showarrow=False)
     st.plotly_chart(fig2, use_container_width=True)
 
-finding("네이버는 CPA ₩900으로 전체 평균 대비 39% 저렴. 라이브커머스는 CTR 11%로 압도적이나 CPA는 3.6배 비쌈. "
-        "→ 네이버 예산 비중을 현 25% → 35%로 확대하고, 라이브커머스는 인지도·CTR 확보 전용으로 역할 분리 권장.", "green")
+finding("구글은 CPA ₩900으로 전체 평균(₩1,485) 대비 39% 저렴. 페이스북은 CTR 11%로 압도적이나 CPA는 구글의 3.6배. "
+        "→ 구글 예산 비중을 현 25% → 35%로 확대하고, 페이스북은 인지도·CTR 확보 전용으로 역할 분리 권장.", "green")
 st.markdown("</div>", unsafe_allow_html=True)
 
 
@@ -834,9 +917,8 @@ with col2:
     fig2.update_layout(**layout2)
     st.plotly_chart(fig2, use_container_width=True)
 
-finding("브랜드키워드가 CTR·CPA 모두 최우수 구간에 위치. 이미지·영상은 저CTR·고CPA의 '비효율 구간'. "
-        "→ 키워드 예산을 현재 대비 20%p 확대, 이미지 리소스를 키워드 소재 제작으로 전환하면 "
-        "동일 노출 대비 획득 회원수 1.8배 향상 가능.", "green")
+finding("영상(CPA ₩1,126)·이미지(₩1,236)가 저비용 획득 우수. 브랜드키워드는 CTR 13.3%로 클릭 유입에 강하지만 CPA ₩2,978로 고가. "
+        "→ 회원 획득 목적엔 영상·이미지 비중 확대, 브랜드인지도·클릭 유입 목적엔 키워드 역할 분리 운영 권장.", "green")
 st.markdown("</div>", unsafe_allow_html=True)
 
 
@@ -1194,7 +1276,7 @@ st.markdown("</div>", unsafe_allow_html=True)
 # INSIGHT 07 · 채널 × 목적 최적 조합
 # ══════════════════════════════════════════════════════════════════════════════
 st.markdown("<div class='insight-block'>", unsafe_allow_html=True)
-insight_card(7, "네이버×회원가입 조합 CPA ₩788 — 라이브커머스×계좌개설(₩3,810)의 1/5 비용",
+insight_card(7, "구글×회원가입 조합 CPA ₩788 — 페이스북×계좌개설(₩3,810)의 1/5 비용",
              "12개 채널×목적 조합 중 최적 포트폴리오 도출")
 
 cx = d.groupby(['channel','campaign_objective']).agg(
