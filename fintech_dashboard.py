@@ -580,7 +580,7 @@ with tab_cvr:
     st.plotly_chart(fig_cvr3, use_container_width=True)
 
 
-# ── 탭 3: 메트릭 하이어라키 ──────────────────────────────────────────────────
+# ── 탭 3: 메트릭 하이어라키 (Plotly 도형 기반) ────────────────────────────────
 with tab_hierarchy:
     fv = {c: d[c].sum() for c in ['광고노출','광고클릭','앱설치','앱실행','회원가입','계좌개설','첫거래','반복사용','자동이체설정','추천완료']}
 
@@ -595,109 +595,169 @@ with tab_hierarchy:
     auto  = fv['자동이체설정'] / fv['회원가입']  * 100
     rec   = fv['추천완료']   / fv['회원가입']   * 100
 
-    def rate_color(r, threshold_bad=10, threshold_ok=60):
-        if r < threshold_bad: return C_BAD
-        if r < threshold_ok:  return C_WARN
-        return C_GOOD
-
-    # ── HTML 흐름 다이어그램 ──────────────────────────────────────────────────
-    # 각 노드: 단계명 / 절대수 / 누적 유지율
-    # 각 연결: 지표명 + 전환율 (색상 코딩)
-    stages = [
-        ("광고 노출",   fv['광고노출'],   "#334155", None,    None),
-        ("광고 클릭",   fv['광고클릭'],   C_BAD,     "CTR",   f"{ctr:.2f}%"),
-        ("앱 설치",     fv['앱설치'],     "#2563eb", "설치율", f"{ir:.1f}%"),
-        ("앱 실행",     fv['앱실행'],     "#2563eb", "실행율", f"{er:.1f}%"),
-        ("회원 가입",   fv['회원가입'],   C_GOOD,    "CVR",   f"{cvr:.1f}%"),
-        ("계좌 개설",   fv['계좌개설'],   C_GOOD,    "계좌전환", f"{acvr:.1f}%"),
-        ("첫 거래",     fv['첫거래'],     C_WARN,    "거래전환", f"{tcvr:.1f}%"),
-        ("반복 사용",   fv['반복사용'],   C_WARN,    "리텐션", f"{ret:.1f}%"),
+    # ── Plotly 도형 기반 흐름 다이어그램 ────────────────────────────────────────
+    # 노드 정의: (label, count, box_color, arrow_metric, arrow_rate, arrow_color)
+    nodes = [
+        ("광고\n노출",  fv['광고노출'], "#334155", "CTR",    ctr,  C_BAD),
+        ("광고\n클릭",  fv['광고클릭'], C_BAD,     "설치율", ir,   C_ACCENT),
+        ("앱\n설치",    fv['앱설치'],   C_ACCENT,  "실행율", er,   C_ACCENT),
+        ("앱\n실행",    fv['앱실행'],   C_ACCENT,  "CVR",    cvr,  C_GOOD),
+        ("회원\n가입",  fv['회원가입'], C_GOOD,    "계좌전환",acvr, C_GOOD),
+        ("계좌\n개설",  fv['계좌개설'], C_GOOD,    "거래전환",tcvr, C_WARN),
+        ("첫\n거래",    fv['첫거래'],   C_WARN,    "리텐션", ret,  C_WARN),
+        ("반복\n사용",  fv['반복사용'], C_WARN,    None,     None, None),
     ]
 
-    # Row 1: 광고노출 → 광고클릭 → 앱설치 → 앱실행 (4단계)
-    # Row 2: 회원가입 → 계좌개설 → 첫거래 → 반복사용 (4단계)
-    def node_html(label, val, color, pct_of_start):
-        pct_str = f"<div style='font-size:10px;color:#94a3b8;margin-top:2px'>노출 대비 {pct_of_start:.2f}%</div>" if pct_of_start is not None else ""
-        return f"""
-        <div style='background:{color};border-radius:10px;padding:14px 12px;
-             text-align:center;min-width:110px;flex:1;box-shadow:0 2px 8px rgba(0,0,0,0.15)'>
-          <div style='font-size:10px;font-weight:700;color:rgba(255,255,255,0.75);
-               text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px'>{label}</div>
-          <div style='font-size:18px;font-weight:700;color:white;letter-spacing:-0.5px'>{fmt_num(val)}</div>
-          {pct_str}
-        </div>"""
+    # Row 1: 노드 0~3 (y=1.5), Row 2: 노드 4~7 (y=0)
+    # 각 Row에서 x 위치: 0.5, 3, 5.5, 8
+    XS = [0.5, 3.0, 5.5, 8.0]
+    YS = [1.5, 0.0]   # row1, row2
+    W, H = 1.6, 0.7   # 박스 너비/높이
 
-    def arrow_html(metric, rate, color):
-        arrow_col = color if color != "#334155" else "#94a3b8"
-        return f"""
-        <div style='display:flex;flex-direction:column;align-items:center;
-             justify-content:center;padding:0 6px;min-width:72px'>
-          <div style='font-size:9px;font-weight:700;color:{arrow_col};
-               text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px'>{metric}</div>
-          <div style='font-size:15px;font-weight:800;color:{arrow_col}'>{rate}</div>
-          <div style='font-size:18px;color:#cbd5e1;line-height:1'>→</div>
-        </div>"""
+    fig_flow = go.Figure()
 
-    # Row HTML 생성
-    def build_row(stage_slice):
-        html = "<div style='display:flex;align-items:center;gap:0;margin-bottom:12px'>"
-        for i, (label, val, color, metric, rate) in enumerate(stage_slice):
-            pct = val / fv['광고노출'] * 100 if label != "광고 노출" else None
-            html += node_html(label, val, color, pct)
-            if i < len(stage_slice) - 1:
-                next_metric = stage_slice[i+1][3]
-                next_rate   = stage_slice[i+1][4]
-                next_color  = stage_slice[i+1][2]
-                html += arrow_html(next_metric, next_rate, next_color)
-        html += "</div>"
-        return html
+    shapes, annotations = [], []
 
-    row1_html = build_row(stages[:4])
-    row2_html = build_row(stages[4:])
+    def add_node(x, y, label, count, color, pct):
+        # 배경 박스
+        shapes.append(dict(
+            type="rect",
+            x0=x-W/2, x1=x+W/2, y0=y-H/2, y1=y+H/2,
+            fillcolor=color, line=dict(color="white", width=1.5),
+            layer="below"
+        ))
+        # 단계명
+        annotations.append(dict(
+            x=x, y=y+0.12, text=f"<b>{label}</b>",
+            font=dict(size=11, color="white", family=PLOTLY_FONT['family']),
+            showarrow=False, align="center"
+        ))
+        # 수치
+        annotations.append(dict(
+            x=x, y=y-0.13, text=f"<b>{fmt_num(count)}</b>",
+            font=dict(size=13, color="white", family=PLOTLY_FONT['family']),
+            showarrow=False
+        ))
+        # 노출 대비 %
+        if pct is not None:
+            annotations.append(dict(
+                x=x, y=y-H/2-0.14, text=f"노출 대비 {pct:.2f}%",
+                font=dict(size=8.5, color=C_MUTED, family=PLOTLY_FONT['family']),
+                showarrow=False
+            ))
 
-    st.markdown(
-        f"<div style='background:{C_BG};border:1px solid {C_BORDER};"
-        f"border-radius:12px;padding:20px 16px'>"
-        f"<div style='font-size:10px;font-weight:700;color:{C_MUTED};text-transform:uppercase;"
-        f"letter-spacing:.7px;margin-bottom:14px'>광고 유입 단계 (노출 → 앱 실행)</div>"
-        f"{row1_html}"
-        f"<div style='font-size:10px;font-weight:700;color:{C_MUTED};text-transform:uppercase;"
-        f"letter-spacing:.7px;margin:18px 0 14px'>전환 및 활성화 단계 (회원가입 → 반복사용)</div>"
-        f"{row2_html}"
-        f"</div>",
-        unsafe_allow_html=True
+    def add_arrow(x0, x1, y, metric, rate, color):
+        mx = (x0 + x1) / 2
+        # 화살표 선
+        shapes.append(dict(
+            type="line",
+            x0=x0+W/2, x1=x1-W/2, y0=y, y1=y,
+            line=dict(color=color, width=2.5)
+        ))
+        # 화살촉
+        shapes.append(dict(
+            type="line",
+            x0=x1-W/2-0.15, x1=x1-W/2,
+            y0=y+0.08, y1=y,
+            line=dict(color=color, width=2)
+        ))
+        shapes.append(dict(
+            type="line",
+            x0=x1-W/2-0.15, x1=x1-W/2,
+            y0=y-0.08, y1=y,
+            line=dict(color=color, width=2)
+        ))
+        # 지표명 + 전환율
+        annotations.append(dict(
+            x=mx, y=y+0.22, text=f"<b>{metric}</b>",
+            font=dict(size=9, color=color, family=PLOTLY_FONT['family']),
+            showarrow=False
+        ))
+        annotations.append(dict(
+            x=mx, y=y+0.05, text=f"<b>{rate:.1f}%</b>",
+            font=dict(size=12, color=color, family=PLOTLY_FONT['family']),
+            showarrow=False
+        ))
+
+    # Row1 연결선 (세로: row1→row2)
+    shapes.append(dict(
+        type="line", x0=XS[3], x1=XS[3], y0=YS[0]-H/2, y1=YS[1]+H/2+0.3,
+        line=dict(color=C_GOOD, width=2, dash="dot")
+    ))
+    shapes.append(dict(
+        type="line", x0=XS[3], x1=XS[0], y0=YS[1]+H/2+0.3, y1=YS[1]+H/2+0.3,
+        line=dict(color=C_GOOD, width=2, dash="dot")
+    ))
+    shapes.append(dict(
+        type="line", x0=XS[0], x1=XS[0], y0=YS[1]+H/2+0.3, y1=YS[1]+H/2,
+        line=dict(color=C_GOOD, width=2, dash="dot")
+    ))
+    annotations.append(dict(
+        x=(XS[0]+XS[3])/2, y=YS[1]+H/2+0.45,
+        text=f"<b>CVR  {cvr:.1f}%</b>",
+        font=dict(size=10, color=C_GOOD, family=PLOTLY_FONT['family']),
+        showarrow=False
+    ))
+
+    # Row1 노드 + 화살표
+    for i, idx in enumerate(range(4)):
+        label, count, color, metric, rate, acol = nodes[idx]
+        pct = count / fv['광고노출'] * 100 if idx > 0 else None
+        add_node(XS[i], YS[0], label, count, color, pct)
+        if i < 3:
+            add_arrow(XS[i], XS[i+1], YS[0], metric, rate, acol)
+
+    # Row2 노드 + 화살표
+    for i, idx in enumerate(range(4, 8)):
+        label, count, color, metric, rate, acol = nodes[idx]
+        pct = count / fv['광고노출'] * 100
+        add_node(XS[i], YS[1], label, count, color, pct)
+        if i < 3 and metric:
+            add_arrow(XS[i], XS[i+1], YS[1], metric, rate, acol)
+
+    # Row 구분 레이블
+    annotations.append(dict(
+        x=-0.1, y=YS[0], text="<b>유입 단계</b>",
+        font=dict(size=10, color=C_MUTED, family=PLOTLY_FONT['family']),
+        showarrow=False, textangle=-90
+    ))
+    annotations.append(dict(
+        x=-0.1, y=YS[1], text="<b>전환 단계</b>",
+        font=dict(size=10, color=C_MUTED, family=PLOTLY_FONT['family']),
+        showarrow=False, textangle=-90
+    ))
+
+    fig_flow.update_layout(
+        shapes=shapes, annotations=annotations,
+        height=460,
+        margin=dict(l=40, r=20, t=40, b=20),
+        plot_bgcolor=C_SURFACE, paper_bgcolor=C_SURFACE,
+        font=PLOTLY_FONT,
+        xaxis=dict(range=[-0.3, 9.8], showgrid=False, zeroline=False,
+                   showticklabels=False, showline=False),
+        yaxis=dict(range=[-0.75, 2.3], showgrid=False, zeroline=False,
+                   showticklabels=False, showline=False),
+        title=dict(text="메트릭 하이어라키 — 광고 노출부터 반복사용까지 유저 흐름과 각 단계 전환율",
+                   font=dict(size=12, color=C_MUTED), x=0),
+        showlegend=False,
     )
+    st.plotly_chart(fig_flow, use_container_width=True)
 
-    st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
-
-    # ── 하단: 핵심 지표 3열 요약 ─────────────────────────────────────────────
-    st.markdown(
-        f"<div style='font-size:10px;font-weight:700;color:{C_MUTED};"
-        f"text-transform:uppercase;letter-spacing:.7px;margin-bottom:12px'>"
-        f"활성화 지표 (회원가입 이후)</div>",
-        unsafe_allow_html=True
-    )
+    # ── 하단: 활성화 지표 4열 ─────────────────────────────────────────────────
+    st.markdown("**활성화 지표 (회원가입 이후)**")
     ha1, ha2, ha3, ha4 = st.columns(4)
-    for col_a, (label, val, metric, color) in zip(
+    for col_a, (label, val_m, metric_m, color_m) in zip(
         [ha1, ha2, ha3, ha4],
         [
-            ("자동이체 설정", fv['자동이체설정'], f"{auto:.1f}%", C_ACCENT),
-            ("추천 완료",     fv['추천완료'],     f"{rec:.1f}%",  C_ACCENT),
-            ("첫거래 전환율", fv['첫거래'],       f"{fv['첫거래']/fv['회원가입']*100:.1f}%", C_WARN),
-            ("최종 잔존율 (노출→반복)", fv['반복사용'], f"{fv['반복사용']/fv['광고노출']*100:.4f}%", C_MUTED),
+            ("자동이체 설정률", fv['자동이체설정'], f"{auto:.1f}%", C_ACCENT),
+            ("추천 완료율",     fv['추천완료'],     f"{rec:.1f}%",  C_ACCENT),
+            ("첫거래 전환율",   fv['첫거래'],       f"{fv['첫거래']/fv['회원가입']*100:.1f}%", C_WARN),
+            ("노출→반복 잔존율", fv['반복사용'],    f"{fv['반복사용']/fv['광고노출']*100:.4f}%", C_MUTED),
         ]
     ):
-        col_a.markdown(
-            f"<div style='background:{C_SURFACE};border:1px solid {C_BORDER};"
-            f"border-radius:8px;padding:14px 16px;border-top:3px solid {color}'>"
-            f"<div style='font-size:10px;color:{C_MUTED};margin-bottom:6px'>{label}</div>"
-            f"<div style='font-size:20px;font-weight:700;color:{color}'>{metric}</div>"
-            f"<div style='font-size:11px;color:{C_MUTED};margin-top:3px'>{fmt_num(val)}명</div>"
-            f"</div>",
-            unsafe_allow_html=True
-        )
+        col_a.metric(label=f"{label}", value=metric_m, help=f"절대 수: {fmt_num(val_m)}명")
 
-    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+    st.markdown("")
 
     # ── 채널별 메트릭 하이어라키 비교 (CTR/CVR/리텐션) ──────────────────────
     st.markdown(
