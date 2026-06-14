@@ -748,7 +748,7 @@ st.markdown(f"<hr style='border:none;border-top:1px solid {C_BORDER};margin:0 0 
 # INSIGHT 01 · 채널별 비용 효율 격차
 # ══════════════════════════════════════════════════════════════════════════════
 st.markdown("<div class='insight-block'>", unsafe_allow_html=True)
-insight_card(1, "구글이 CPA ₩900으로 페이스북(₩3,280)의 1/3 비용으로 회원을 획득한다",
+insight_card(1, "구글이 CPA ₩900으로 네이버검색(₩3,280)의 1/3 비용으로 회원을 획득한다",
              "채널별 CPA, CTR, 예산 배분의 3차원 비교")
 
 ch = d.groupby('channel').agg(
@@ -820,8 +820,8 @@ with col2:
                         text="저CTR·저CPA", font=dict(size=9, color=C_GOOD), showarrow=False)
     st.plotly_chart(fig2, use_container_width=True)
 
-finding("구글은 CPA ₩900으로 전체 평균(₩1,485) 대비 39% 저렴. 페이스북은 CTR 11%로 압도적이나 CPA는 구글의 3.6배. "
-        "→ 구글 예산 비중을 현 25% → 35%로 확대하고, 페이스북은 인지도·CTR 확보 전용으로 역할 분리 권장.", "green")
+finding("구글은 CPA ₩900으로 전체 평균(₩1,485) 대비 39% 저렴. 네이버검색은 CTR 11%로 압도적이나 CPA는 구글의 3.6배. "
+        "→ 구글 예산 비중을 현 25% → 35%로 확대하고, 네이버검색은 인지도·CTR 확보 전용으로 역할 분리 권장.", "green")
 st.markdown("</div>", unsafe_allow_html=True)
 
 
@@ -1276,7 +1276,7 @@ st.markdown("</div>", unsafe_allow_html=True)
 # INSIGHT 07 · 채널 × 목적 최적 조합
 # ══════════════════════════════════════════════════════════════════════════════
 st.markdown("<div class='insight-block'>", unsafe_allow_html=True)
-insight_card(7, "구글×회원가입 조합 CPA ₩788 — 페이스북×계좌개설(₩3,810)의 1/5 비용",
+insight_card(7, "구글×회원가입 조합 CPA ₩788 — 네이버검색×계좌개설(₩3,810)의 1/5 비용",
              "12개 채널×목적 조합 중 최적 포트폴리오 도출")
 
 cx = d.groupby(['channel','campaign_objective']).agg(
@@ -1611,7 +1611,7 @@ with col2:
     st.plotly_chart(fig2, use_container_width=True)
 
 finding(f"자동이체 설정률과 반복사용률 상관계수 r={corr_val:.3f} (양의 상관). "
-        "가입 직후 자동이체 설정 온보딩 넛지 추가 시 리텐션 3~5%p 개선 예상 (LTV ₩{cpa*0.18:,.0f} 향상 효과). "
+        f"가입 직후 자동이체 설정 온보딩 넛지 추가 시 리텐션 3~5%p 개선 예상 (CPA 대비 LTV ₩{cpa*0.18:,.0f} 향상 효과). "
         "→ 인앱 Day-1 팝업 + 자동이체 설정 완료 리워드(첫달 수수료 0%) 즉시 구현 권장.", "blue")
 st.markdown("</div>", unsafe_allow_html=True)
 
