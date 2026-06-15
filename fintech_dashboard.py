@@ -378,85 +378,144 @@ with tab_campaign:
 
     st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
 
-    # ── 캠페인 포지셔닝 산점도 ───────────────────────────────────────────────────
-    # X=회원가입 수(성과), Y=CPA(효율), Size=광고비, Color=채널
-    # 우하단(많이+싸게) = 승자 / 좌상단(적게+비싸게) = 재검토 필요
-    camp_sc = camp.dropna(subset=['CPA', '회원가입']).copy()
-    med_join = camp_sc['회원가입'].median()
-    med_cpa  = camp_sc['CPA'].median()
-    avg_cpa_t = camp_sc['CPA'].mean()
+    # ── 채널별 CPA 분포 스트립 차트 ───────────────────────────────────────────
+    # 채널 3개로 나누어 각 캠페인을 점으로 → 겹침 없이 분포 파악
+    # Y = CPA, X = 채널(그룹), 점 크기 = 회원가입 수, 색 = 캠페인 목적
+    camp_strip = camp.dropna(subset=['CPA']).copy()
+    avg_cpa_t  = camp_strip['CPA'].mean()
 
-    fig_sc = go.Figure()
+    obj_colors = {'회원가입': C_GOOD, '계좌개설': C_ACCENT}
+    ch_list    = sorted(camp_strip['channel'].unique())
 
-    # ── 사분면 배경 ──────────────────────────────────────────────────────────
-    x_max = camp_sc['회원가입'].max() * 1.25
-    y_max = camp_sc['CPA'].max() * 1.2
-    # 우하단 = 승자 (초록)
-    fig_sc.add_shape(type="rect", x0=med_join, x1=x_max, y0=0, y1=med_cpa,
-                     fillcolor="#f0fdf4", opacity=0.45, layer="below", line_width=0)
-    # 좌상단 = 비효율 (빨강)
-    fig_sc.add_shape(type="rect", x0=0, x1=med_join, y0=med_cpa, y1=y_max,
-                     fillcolor="#fef2f2", opacity=0.45, layer="below", line_width=0)
-    # 분할선
-    fig_sc.add_vline(x=med_join, line_dash="dot", line_color=C_BORDER, line_width=1.2)
-    fig_sc.add_hline(y=med_cpa,  line_dash="dot", line_color=C_BORDER, line_width=1.2)
+    np.random.seed(42)
 
-    # 사분면 레이블
-    fig_sc.add_annotation(x=x_max*0.88, y=med_cpa*0.15,
-        text="<b>승자 구간</b><br>고성과·저비용",
-        font=dict(size=10, color=C_GOOD), showarrow=False,
-        bgcolor="#f0fdf4", bordercolor="#bbf7d0", borderwidth=1, borderpad=5)
-    fig_sc.add_annotation(x=med_join*0.12, y=y_max*0.93,
-        text="<b>재검토 구간</b><br>저성과·고비용",
-        font=dict(size=10, color=C_BAD), showarrow=False,
-        bgcolor="#fef2f2", bordercolor="#fecaca", borderwidth=1, borderpad=5)
+    col_left, col_right = st.columns([3, 2], gap="medium")
 
-    # ── 캠페인 점 (채널별 색상) ──────────────────────────────────────────────
-    for ch_name in camp_sc['channel'].unique():
-        sub = camp_sc[camp_sc['channel'] == ch_name]
-        c   = C_CH.get(ch_name, C_MUTED)
-        # 점 크기: 광고비 sqrt 정규화 (6~28px)
-        sizes = (np.sqrt(sub['광고비'] / sub['광고비'].max()) * 22 + 6).values
-        fig_sc.add_trace(go.Scatter(
-            x=sub['회원가입'], y=sub['CPA'],
-            mode='markers', name=ch_name,
-            marker=dict(size=sizes, color=c, opacity=0.75,
-                        line=dict(color='white', width=1.2)),
-            customdata=sub[['campaign_id','campaign_objective','CTR','CVR','광고비']].values,
-            hovertemplate=(
-                "<b>%{customdata[0]}</b><br>"
-                "채널: " + ch_name + " · %{customdata[1]}<br>"
-                "회원가입: %{x:,}명<br>"
-                "CPA: ₩%{y:,.0f}<br>"
-                "CTR: %{customdata[2]:.2f}%  CVR: %{customdata[3]:.1f}%<br>"
-                "광고비: ₩%{customdata[4]:,.0f}<extra></extra>"
-            ),
-        ))
+    with col_left:
+        fig_strip = go.Figure()
 
-    # ── 상위 5 캠페인 이름 레이블 (승자 구간에서 회원가입 많은 순) ────────────
-    winners = camp_sc[(camp_sc['회원가입'] >= med_join) & (camp_sc['CPA'] <= med_cpa)]
-    top5_w  = winners.nlargest(5, '회원가입')
-    for _, row in top5_w.iterrows():
-        fig_sc.add_annotation(
-            x=row['회원가입'], y=row['CPA'],
-            text=f"  {row['campaign_id']}",
-            font=dict(size=8, color=C_GOOD),
-            showarrow=False, xanchor='left'
+        # 채널별 평균 CPA 수평선 + 배경
+        ch_positions = {ch: i for i, ch in enumerate(ch_list)}
+        for i, ch_name in enumerate(ch_list):
+            sub_ch = camp_strip[camp_strip['channel'] == ch_name]
+            ch_avg = sub_ch['CPA'].mean()
+
+            # 배경 띠
+            fig_strip.add_shape(
+                type="rect", x0=i-0.45, x1=i+0.45,
+                y0=sub_ch['CPA'].min()*0.9, y1=sub_ch['CPA'].max()*1.05,
+                fillcolor=hex_rgba(C_CH.get(ch_name, C_MUTED), 0.06),
+                line_width=0, layer="below"
+            )
+            # 채널 평균선
+            fig_strip.add_shape(
+                type="line", x0=i-0.38, x1=i+0.38,
+                y0=ch_avg, y1=ch_avg,
+                line=dict(color=C_CH.get(ch_name, C_MUTED), width=2, dash="dot")
+            )
+            fig_strip.add_annotation(
+                x=i+0.42, y=ch_avg,
+                text=f"평균<br>₩{ch_avg:,.0f}",
+                font=dict(size=8, color=C_CH.get(ch_name, C_MUTED)),
+                showarrow=False, xanchor='left'
+            )
+
+        # 캠페인 목적별로 점 그리기 (겹침 방지 jitter)
+        for obj in camp_strip['campaign_objective'].unique():
+            sub_obj = camp_strip[camp_strip['campaign_objective'] == obj]
+            c = obj_colors.get(obj, C_MUTED)
+
+            # x값: 채널 인덱스 + 랜덤 jitter
+            x_jitter = [
+                ch_positions[r['channel']] + np.random.uniform(-0.3, 0.3)
+                for _, r in sub_obj.iterrows()
+            ]
+            # 점 크기: 회원가입 정규화 (6~18px)
+            max_join = camp_strip['회원가입'].max()
+            sizes = (sub_obj['회원가입'] / max_join * 12 + 5).values
+
+            fig_strip.add_trace(go.Scatter(
+                x=x_jitter, y=sub_obj['CPA'].values,
+                mode='markers', name=obj,
+                marker=dict(
+                    size=sizes, color=c, opacity=0.72,
+                    line=dict(color='white', width=1)
+                ),
+                customdata=sub_obj[['campaign_id','channel','회원가입','CTR','CVR']].values,
+                hovertemplate=(
+                    "<b>%{customdata[0]}</b><br>"
+                    "채널: %{customdata[1]}<br>"
+                    "CPA: ₩%{y:,.0f}<br>"
+                    "회원가입: %{customdata[2]:,}명<br>"
+                    "CTR: %{customdata[3]:.2f}%  CVR: %{customdata[4]:.1f}%<extra></extra>"
+                ),
+            ))
+
+        # 전체 평균 수평선
+        fig_strip.add_hline(
+            y=avg_cpa_t, line_dash="dash", line_color="#94a3b8", line_width=1.2,
+            annotation_text=f" 전체 평균 ₩{avg_cpa_t:,.0f}",
+            annotation_font=dict(size=9, color=C_MUTED),
+            annotation_position="right"
         )
 
-    layout_sc = base_layout(height=460, margin=dict(l=10, r=20, t=50, b=10))
-    layout_sc['title'] = dict(
-        text="캠페인 포지셔닝 맵 — X: 회원가입 수(많을수록↑) · Y: CPA(낮을수록↑) · 버블 크기: 광고비",
-        font=dict(size=12, color=C_MUTED), x=0
-    )
-    layout_sc['xaxis']['title'] = "회원가입 수 (명, 많을수록 우수)"
-    layout_sc['xaxis']['tickformat'] = ","
-    layout_sc['yaxis']['title'] = "CPA (원, 낮을수록 우수)"
-    layout_sc['yaxis']['tickformat'] = ","
-    layout_sc['legend'] = dict(orientation='h', y=1.06, font=dict(size=11))
-    fig_sc.update_layout(**layout_sc)
-    st.plotly_chart(fig_sc, use_container_width=True)
-    st.caption(f"중앙값 기준선: 회원가입 {med_join:,.0f}명 · CPA ₩{med_cpa:,.0f} | 초록 구간 캠페인 이름 레이블 = 승자 Top 5 | 각 점에 마우스를 올리면 상세 지표 확인 가능")
+        layout_strip = base_layout(height=440, margin=dict(l=10, r=100, t=50, b=10))
+        layout_strip['title'] = dict(
+            text="채널별 캠페인 CPA 분포 — 점 크기: 회원가입 수 · 색상: 캠페인 목적 · 점선: 채널 평균",
+            font=dict(size=12, color=C_MUTED), x=0
+        )
+        layout_strip['xaxis'] = dict(
+            tickvals=list(range(len(ch_list))),
+            ticktext=ch_list,
+            tickfont=dict(size=12, color=C_TEXT),
+            showgrid=False, zeroline=False,
+            linecolor=C_BORDER, linewidth=1,
+        )
+        layout_strip['yaxis']['title'] = "CPA (원, 낮을수록 우수)"
+        layout_strip['yaxis']['tickformat'] = ","
+        layout_strip['legend'] = dict(
+            title="캠페인 목적", orientation='v',
+            font=dict(size=10), x=1.01, y=0.5
+        )
+        fig_strip.update_layout(**layout_strip)
+        st.plotly_chart(fig_strip, use_container_width=True)
+
+    with col_right:
+        # 채널별 요약 지표 카드 (스트립 차트 보완)
+        ch_summary = camp_strip.groupby('channel').agg(
+            캠페인수=('campaign_id','nunique'),
+            총회원가입=('회원가입','sum'),
+            평균CPA=('CPA','mean'),
+            최저CPA=('CPA','min'),
+            최고CPA=('CPA','max'),
+            총광고비=('광고비','sum'),
+        ).reset_index()
+
+        st.markdown(
+            f"<div style='font-size:10px;font-weight:700;color:{C_MUTED};"
+            f"text-transform:uppercase;letter-spacing:.6px;margin-bottom:12px'>"
+            f"채널별 캠페인 요약</div>",
+            unsafe_allow_html=True
+        )
+        for _, row in ch_summary.sort_values('평균CPA').iterrows():
+            ch_c = C_CH.get(row['channel'], C_MUTED)
+            is_best = row['평균CPA'] == ch_summary['평균CPA'].min()
+            border = f"border-left:3px solid {ch_c}"
+            st.markdown(
+                f"<div style='background:{C_BG};border-radius:8px;padding:12px 14px;"
+                f"margin-bottom:8px;{border}'>"
+                f"<div style='font-size:12px;font-weight:700;color:{ch_c};margin-bottom:6px'>"
+                f"{row['channel']}{'  ★ 최우수' if is_best else ''}</div>"
+                f"<div style='display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;font-size:11px;color:{C_MUTED}'>"
+                f"<span>캠페인 수</span><span style='color:{C_TEXT};font-weight:600'>{row['캠페인수']}개</span>"
+                f"<span>총 회원가입</span><span style='color:{C_TEXT};font-weight:600'>{fmt_num(row['총회원가입'])}명</span>"
+                f"<span>평균 CPA</span><span style='color:{ch_c};font-weight:700'>₩{row['평균CPA']:,.0f}</span>"
+                f"<span>CPA 범위</span><span style='color:{C_TEXT};font-weight:600'>₩{row['최저CPA']:,.0f}–₩{row['최고CPA']:,.0f}</span>"
+                f"<span>총 광고비</span><span style='color:{C_TEXT};font-weight:600'>{fmt_won(row['총광고비'])}</span>"
+                f"</div></div>",
+                unsafe_allow_html=True
+            )
+        st.caption("점선 = 해당 채널 캠페인 CPA 평균 | 점이 아래 = 더 효율적")
 
     # 상세 테이블
     with st.expander("전체 캠페인 상세 데이터"):
