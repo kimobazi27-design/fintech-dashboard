@@ -378,59 +378,82 @@ with tab_campaign:
 
     st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
 
-    # CPA 기준 막대 차트 — 상위 15개
-    top_camp = camp.nsmallest(15, 'CPA')
-    avg_camp_cpa = camp['CPA'].mean()
+    # ── A안: 탭은 데이터 탐색 중심 — 차트는 인사이트와 겹치지 않는 것만 ──────
+    # CPA 순위 (상위 15) — 인사이트에 없는 캠페인 단위 분석
+    col_ta, col_tb = st.columns(2, gap="medium")
 
-    fig_c = go.Figure()
-    bar_c_colors = [C_GOOD if v < avg_camp_cpa else C_BAD for v in top_camp['CPA']]
-    fig_c.add_trace(go.Bar(
-        x=top_camp['campaign_id'],
-        y=top_camp['CPA'],
-        marker_color=bar_c_colors,
-        text=[f"₩{v:,.0f}" for v in top_camp['CPA']],
-        textposition='outside',
-        textfont=dict(size=10, color=C_TEXT),
-        width=0.6,
-        customdata=top_camp[['channel','campaign_objective','광고비']].values,
-        hovertemplate="<b>%{x}</b><br>채널: %{customdata[0]}<br>목적: %{customdata[1]}<br>CPA: ₩%{y:,.0f}<br>광고비: ₩%{customdata[2]:,.0f}<extra></extra>",
-    ))
-    fig_c.add_hline(y=avg_camp_cpa, line_dash="dot", line_color=C_MUTED, line_width=1.5,
-                    annotation_text=f" 평균 CPA ₩{avg_camp_cpa:,.0f}",
-                    annotation_font=dict(size=9, color=C_MUTED))
-    layout_c = base_layout(height=320, margin=dict(l=10, r=10, t=36, b=80))
-    layout_c['title'] = dict(text="캠페인별 CPA 순위 (상위 15개, 낮을수록 우수)", font=dict(size=12, color=C_MUTED), x=0)
-    layout_c['xaxis']['tickangle'] = -35
-    layout_c['xaxis']['tickfont']['size'] = 9
-    layout_c['yaxis']['title'] = "CPA (원)"
-    layout_c['yaxis']['tickformat'] = ","
-    layout_c['showlegend'] = False
-    fig_c.update_layout(**layout_c)
-    st.plotly_chart(fig_c, use_container_width=True)
-
-    # 캠페인별 CTR vs CVR 버블
-    fig_c2 = go.Figure()
-    for ch_name in camp['channel'].unique():
-        sub = camp[camp['channel'] == ch_name].dropna(subset=['CTR','CVR'])
-        c = C_CH.get(ch_name, C_ACCENT)
-        fig_c2.add_trace(go.Scatter(
-            x=sub['CTR'], y=sub['CVR'],
-            mode='markers', name=ch_name,
-            marker=dict(
-                size=np.sqrt(sub['광고비'] / sub['광고비'].max()) * 30 + 6,
-                color=c, opacity=0.7, line=dict(color='white', width=1)
-            ),
-            hovertemplate="<b>%{customdata[0]}</b><br>CTR: %{x:.2f}%<br>CVR: %{y:.2f}%<extra></extra>",
-            customdata=sub[['campaign_id']].values,
+    with col_ta:
+        top_camp = camp.nsmallest(15, 'CPA')
+        avg_camp_cpa = camp['CPA'].mean()
+        fig_c = go.Figure()
+        fig_c.add_trace(go.Bar(
+            x=top_camp['CPA'], y=top_camp['campaign_id'],
+            orientation='h',
+            marker_color=[C_GOOD if v < avg_camp_cpa else "#94a3b8" for v in top_camp['CPA']],
+            text=[f"₩{v:,.0f}" for v in top_camp['CPA']],
+            textposition='outside', textfont=dict(size=9, color=C_TEXT),
+            width=0.65,
+            customdata=top_camp[['channel','campaign_objective']].values,
+            hovertemplate="<b>%{y}</b><br>채널: %{customdata[0]}<br>목적: %{customdata[1]}<br>CPA: ₩%{x:,.0f}<extra></extra>",
         ))
-    layout_c2 = base_layout(height=300, margin=dict(l=10, r=10, t=36, b=10))
-    layout_c2['title'] = dict(text="캠페인별 CTR vs CVR 포지셔닝 (버블 크기 = 광고비)", font=dict(size=12, color=C_MUTED), x=0)
-    layout_c2['xaxis']['title'] = "CTR (%)"
-    layout_c2['yaxis']['title'] = "CVR (%)"
-    layout_c2['xaxis']['ticksuffix'] = "%"
-    layout_c2['yaxis']['ticksuffix'] = "%"
-    fig_c2.update_layout(**layout_c2)
-    st.plotly_chart(fig_c2, use_container_width=True)
+        fig_c.add_vline(x=avg_camp_cpa, line_dash="dot", line_color=C_MUTED, line_width=1.2,
+                        annotation_text=f" 평균 ₩{avg_camp_cpa:,.0f}",
+                        annotation_font=dict(size=9, color=C_MUTED))
+        layout_c = base_layout(height=420, margin=dict(l=10, r=80, t=36, b=10))
+        layout_c['title'] = dict(text="CPA 최저 캠페인 Top 15 (초록 = 평균 이하)", font=dict(size=12, color=C_MUTED), x=0)
+        layout_c['xaxis']['title'] = "CPA (원)"
+        layout_c['xaxis']['tickformat'] = ","
+        layout_c['yaxis']['showgrid'] = False
+        layout_c['showlegend'] = False
+        fig_c.update_layout(**layout_c)
+        st.plotly_chart(fig_c, use_container_width=True)
+
+    with col_tb:
+        # CPA vs 회원가입 산점도 — 캠페인 효율 포지셔닝
+        # 인사이트의 채널 버블과 다른 각도: 캠페인 단위 + 목적별 색상
+        camp_plot = camp.dropna(subset=['CPA','CVR'])
+        obj_colors = {'회원가입': C_GOOD, '계좌개설': C_ACCENT}
+        avg_cvr = camp_plot['CVR'].mean()
+        avg_cpa2 = camp_plot['CPA'].mean()
+
+        fig_c2 = go.Figure()
+        # 사분면 배경
+        fig_c2.add_shape(type="rect",
+            x0=0, x1=avg_cpa2, y0=avg_cvr, y1=camp_plot['CVR'].max()*1.1,
+            fillcolor="#f0fdf4", opacity=0.4, layer="below", line_width=0)
+        fig_c2.add_shape(type="rect",
+            x0=avg_cpa2, x1=camp_plot['CPA'].max()*1.1, y0=0, y1=avg_cvr,
+            fillcolor="#fef2f2", opacity=0.4, layer="below", line_width=0)
+
+        for obj in camp_plot['campaign_objective'].unique():
+            sub = camp_plot[camp_plot['campaign_objective'] == obj]
+            c = obj_colors.get(obj, C_MUTED)
+            fig_c2.add_trace(go.Scatter(
+                x=sub['CPA'], y=sub['CVR'],
+                mode='markers', name=obj,
+                marker=dict(size=8, color=c, opacity=0.65,
+                            line=dict(color='white', width=1)),
+                hovertemplate="<b>%{customdata[0]}</b><br>CPA: ₩%{x:,.0f}<br>CVR: %{y:.1f}%<extra></extra>",
+                customdata=sub[['campaign_id']].values,
+            ))
+        fig_c2.add_vline(x=avg_cpa2, line_dash="dot", line_color=C_BORDER, line_width=1)
+        fig_c2.add_hline(y=avg_cvr, line_dash="dot", line_color=C_BORDER, line_width=1)
+        fig_c2.add_annotation(x=avg_cpa2*0.3, y=camp_plot['CVR'].max()*1.05,
+            text="최적 구간\n저CPA·고CVR", font=dict(size=9, color=C_GOOD), showarrow=False,
+            bgcolor="#f0fdf4", bordercolor="#bbf7d0", borderwidth=1, borderpad=3)
+        fig_c2.add_annotation(x=camp_plot['CPA'].max()*0.9, y=avg_cvr*0.3,
+            text="비효율 구간\n고CPA·저CVR", font=dict(size=9, color=C_BAD), showarrow=False,
+            bgcolor="#fef2f2", bordercolor="#fecaca", borderwidth=1, borderpad=3)
+
+        layout_c2 = base_layout(height=420, margin=dict(l=10, r=10, t=36, b=10))
+        layout_c2['title'] = dict(text="캠페인 효율 매트릭스 — CPA(낮을수록) vs CVR(높을수록)", font=dict(size=12, color=C_MUTED), x=0)
+        layout_c2['xaxis']['title'] = "CPA (원, 낮을수록 우수)"
+        layout_c2['yaxis']['title'] = "CVR (%, 높을수록 우수)"
+        layout_c2['xaxis']['tickformat'] = ","
+        layout_c2['yaxis']['ticksuffix'] = "%"
+        layout_c2['legend'] = dict(font=dict(size=10), orientation='h', y=1.06)
+        fig_c2.update_layout(**layout_c2)
+        st.plotly_chart(fig_c2, use_container_width=True)
 
     # 상세 테이블
     with st.expander("전체 캠페인 상세 데이터"):
@@ -476,82 +499,8 @@ with tab_cvr:
     cv7.metric("첫거래→반복", f"{cvr_trade_to_repeat:.1f}%")
     cv8.metric("클릭 대비 반복사용", f"{d['반복사용'].sum()/d['광고클릭'].sum()*100:.2f}%", help="최종 LTV 유저 비율")
 
-    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-
-    col1, col2 = st.columns(2, gap="medium")
-
-    with col1:
-        # 채널별 CVR 비교
-        cvr_ch = d.groupby('channel').agg(
-            광고클릭=('광고클릭','sum'), 앱설치=('앱설치','sum'),
-            앱실행=('앱실행','sum'), 회원가입=('회원가입','sum'),
-            계좌개설=('계좌개설','sum'), 첫거래=('첫거래','sum')
-        ).reset_index()
-        cvr_ch['클릭→설치'] = cvr_ch['앱설치']   / cvr_ch['광고클릭'] * 100
-        cvr_ch['설치→실행'] = cvr_ch['앱실행']    / cvr_ch['앱설치']   * 100
-        cvr_ch['실행→가입'] = cvr_ch['회원가입']  / cvr_ch['앱실행']   * 100
-        cvr_ch['가입→계좌'] = cvr_ch['계좌개설']  / cvr_ch['회원가입'] * 100
-        cvr_ch['계좌→거래'] = cvr_ch['첫거래']    / cvr_ch['계좌개설'] * 100
-
-        cvr_melt = cvr_ch.melt(
-            id_vars='channel',
-            value_vars=['클릭→설치','설치→실행','실행→가입','가입→계좌','계좌→거래'],
-            var_name='전환 구간', value_name='CVR'
-        )
-        fig_cvr = go.Figure()
-        for ch_name in cvr_ch['channel'].unique():
-            sub = cvr_melt[cvr_melt['channel'] == ch_name]
-            c = C_CH.get(ch_name, C_ACCENT)
-            fig_cvr.add_trace(go.Bar(
-                name=ch_name, x=sub['전환 구간'], y=sub['CVR'],
-                marker_color=c, opacity=0.85,
-                text=[f"{v:.1f}%" for v in sub['CVR']],
-                textposition='outside', textfont=dict(size=9),
-            ))
-        layout_cvr = base_layout(height=320)
-        layout_cvr['title'] = dict(text="채널별 단계별 CVR 비교", font=dict(size=12, color=C_MUTED), x=0)
-        layout_cvr['barmode'] = 'group'
-        layout_cvr['yaxis']['title'] = "CVR (%)"
-        layout_cvr['yaxis']['ticksuffix'] = "%"
-        layout_cvr['legend'] = dict(font=dict(size=10), orientation='h', y=1.08)
-        layout_cvr['xaxis']['tickfont']['size'] = 10
-        fig_cvr.update_layout(**layout_cvr)
-        st.plotly_chart(fig_cvr, use_container_width=True)
-
-    with col2:
-        # 소재별 CVR
-        cvr_fmt = d.groupby('creative_format').agg(
-            광고클릭=('광고클릭','sum'), 회원가입=('회원가입','sum'),
-            앱설치=('앱설치','sum'), 계좌개설=('계좌개설','sum')
-        ).reset_index()
-        cvr_fmt['클릭→설치'] = cvr_fmt['앱설치']   / cvr_fmt['광고클릭'] * 100
-        cvr_fmt['클릭→가입'] = cvr_fmt['회원가입']  / cvr_fmt['광고클릭'] * 100
-        cvr_fmt['클릭→계좌'] = cvr_fmt['계좌개설']  / cvr_fmt['광고클릭'] * 100
-
-        cvr_fmt_melt = cvr_fmt.melt(
-            id_vars='creative_format',
-            value_vars=['클릭→설치','클릭→가입','클릭→계좌'],
-            var_name='전환 구간', value_name='CVR'
-        )
-        fig_cvr2 = go.Figure()
-        stage_colors = {'클릭→설치': '#2563eb', '클릭→가입': C_GOOD, '클릭→계좌': C_WARN}
-        for stage in ['클릭→설치','클릭→가입','클릭→계좌']:
-            sub = cvr_fmt_melt[cvr_fmt_melt['전환 구간'] == stage]
-            fig_cvr2.add_trace(go.Bar(
-                name=stage, x=sub['creative_format'], y=sub['CVR'],
-                marker_color=stage_colors[stage], opacity=0.85,
-                text=[f"{v:.1f}%" for v in sub['CVR']],
-                textposition='outside', textfont=dict(size=9),
-            ))
-        layout_cvr2 = base_layout(height=320)
-        layout_cvr2['title'] = dict(text="소재 포맷별 CVR (클릭 기준)", font=dict(size=12, color=C_MUTED), x=0)
-        layout_cvr2['barmode'] = 'group'
-        layout_cvr2['yaxis']['title'] = "CVR (%)"
-        layout_cvr2['yaxis']['ticksuffix'] = "%"
-        layout_cvr2['legend'] = dict(font=dict(size=10), orientation='h', y=1.08)
-        fig_cvr2.update_layout(**layout_cvr2)
-        st.plotly_chart(fig_cvr2, use_container_width=True)
-
+    st.divider()
+    # ── A안: 탭은 시계열 트렌드 탐색 중심 (채널/소재 비교는 인사이트 블록에) ──
     # 월별 CVR 트렌드
     cvr_mon = d.groupby('month_label').agg(
         광고클릭=('광고클릭','sum'), 회원가입=('회원가입','sum'),
@@ -776,29 +725,53 @@ with tab_hierarchy:
     ch_hier['거래율'] = ch_hier['첫거래']  / ch_hier['회원가입']  * 100
     ch_hier['리텐션'] = ch_hier['반복사용'] / ch_hier['첫거래']   * 100
 
-    fig_hier = go.Figure()
-    metrics_hier = ['CTR','CVR','거래율','리텐션']
-    colors_hier  = [C_BAD, C_GOOD, C_WARN, C_ACCENT]
-    for ch_name in ch_hier['channel']:
-        row = ch_hier[ch_hier['channel'] == ch_name].iloc[0]
-        c = C_CH.get(ch_name, C_ACCENT)
-        fig_hier.add_trace(go.Scatter(
-            x=metrics_hier,
-            y=[row['CTR'], row['CVR'], row['거래율'], row['리텐션']],
-            mode='lines+markers+text',
-            name=ch_name,
-            line=dict(color=c, width=2.5),
-            marker=dict(size=10, color=c, line=dict(color='white', width=2)),
-            text=[f"{row['CTR']:.2f}%", f"{row['CVR']:.1f}%", f"{row['거래율']:.1f}%", f"{row['리텐션']:.1f}%"],
-            textposition='top center',
-            textfont=dict(size=10, color=c),
-        ))
-    layout_hier = base_layout(height=300)
-    layout_hier['title'] = dict(text="채널별 핵심 전환 지표 비교 (CTR → CVR → 거래율 → 리텐션)", font=dict(size=12, color=C_MUTED), x=0)
-    layout_hier['yaxis']['title'] = "전환율 (%)"
-    layout_hier['yaxis']['ticksuffix'] = "%"
-    layout_hier['legend'] = dict(font=dict(size=11), orientation='h', y=1.1)
-    fig_hier.update_layout(**layout_hier)
+    # ── 4분할 서브플롯: 지표별 스케일이 달라 같은 축에 넣으면 겹침 ──────────
+    hier_metrics = [
+        ('CTR',   'CTR (%)',  '클릭률',   C_BAD,    '.2f'),
+        ('CVR',   'CVR (%)',  '앱실행→가입', C_GOOD, '.1f'),
+        ('거래율', '거래율 (%)', '가입→첫거래', C_WARN,  '.1f'),
+        ('리텐션', '리텐션 (%)', '첫거래→반복', C_ACCENT,'.1f'),
+    ]
+    fig_hier = make_subplots(
+        rows=1, cols=4,
+        subplot_titles=[m[2] for m in hier_metrics],
+        shared_yaxes=False,
+    )
+    ch_order = ch_hier.sort_values('CTR')['channel'].tolist()
+
+    for col_idx, (metric, ytitle, subtitle, color, fmt) in enumerate(hier_metrics, 1):
+        vals = [ch_hier[ch_hier['channel']==ch][metric].values[0] for ch in ch_order]
+        bar_colors = [C_CH.get(ch, C_MUTED) for ch in ch_order]
+        fig_hier.add_trace(go.Bar(
+            x=vals, y=ch_order,
+            orientation='h',
+            marker_color=bar_colors,
+            text=[f"{v:{fmt}}%" for v in vals],
+            textposition='outside',
+            textfont=dict(size=11, color=C_TEXT),
+            width=0.5,
+            showlegend=False,
+            hovertemplate=f"<b>%{{y}}</b><br>{metric}: %{{x:{fmt}}}%<extra></extra>",
+        ), row=1, col=col_idx)
+        # 전체 평균선
+        avg_v = ch_hier[metric].mean()
+        fig_hier.add_vline(
+            x=avg_v, line_dash="dot", line_color="#cbd5e1", line_width=1.2,
+            row=1, col=col_idx
+        )
+
+    fig_hier.update_layout(
+        height=260,
+        margin=dict(l=10, r=20, t=50, b=10),
+        font=PLOTLY_FONT,
+        plot_bgcolor=C_SURFACE, paper_bgcolor=C_SURFACE,
+        title=dict(text="채널별 핵심 지표 — 지표마다 별도 축으로 정확히 비교 (점선 = 전체 평균)",
+                   font=dict(size=12, color=C_MUTED), x=0),
+    )
+    for i in range(1, 5):
+        fig_hier.update_xaxes(showgrid=False, ticksuffix="%",
+                               tickfont=dict(size=9, color=C_MUTED), row=1, col=i)
+        fig_hier.update_yaxes(showgrid=False, tickfont=dict(size=10, color=C_TEXT), row=1, col=i)
     st.plotly_chart(fig_hier, use_container_width=True)
 
 st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
@@ -850,34 +823,39 @@ with col1:
     st.plotly_chart(fig, use_container_width=True)
 
 with col2:
-    # Bubble: CTR(x) vs CPA(y), size=spend
-    fig2 = go.Figure()
-    for _, row in ch.iterrows():
-        ch_name = row['channel']
-        c = C_CH.get(ch_name, C_ACCENT)
-        fig2.add_trace(go.Scatter(
-            x=[row['CTR']], y=[row['CPA']],
-            mode='markers+text',
-            marker=dict(size=row['예산비중'] * 3, color=c, opacity=0.85,
-                        line=dict(color='white', width=2)),
-            text=[ch_name], textposition='top center',
-            textfont=dict(size=10, color=C_TEXT),
-            name=ch_name,
-            hovertemplate=f"<b>{ch_name}</b><br>CTR: {row['CTR']:.2f}%<br>CPA: ₩{row['CPA']:,.0f}<br>예산비중: {row['예산비중']:.1f}%<extra></extra>",
-        ))
-    layout2 = base_layout(height=240)
-    layout2['title'] = dict(text="CTR vs CPA 포지셔닝 (버블 크기 = 예산 비중)", font=dict(size=12, color=C_MUTED), x=0)
-    layout2['xaxis']['title'] = "CTR (%)"
-    layout2['yaxis']['title'] = "CPA (원)"
-    layout2['xaxis']['ticksuffix'] = "%"
-    layout2['yaxis']['tickformat'] = ","
-    layout2['showlegend'] = False
+    # CTR(막대) + CPA(라인) 이중축 — 3개 채널을 명확하게 비교
+    ch_sorted2 = ch.sort_values('CPA', ascending=True)
+    bar_colors2 = [C_CH.get(n, C_MUTED) for n in ch_sorted2['channel']]
+
+    fig2 = make_subplots(specs=[[{"secondary_y": True}]])
+    fig2.add_trace(go.Bar(
+        x=ch_sorted2['channel'], y=ch_sorted2['CTR'],
+        name='CTR (%)', marker_color=bar_colors2, opacity=0.85,
+        text=[f"{v:.2f}%" for v in ch_sorted2['CTR']],
+        textposition='outside', textfont=dict(size=11, color=C_TEXT),
+        width=0.45,
+    ), secondary_y=False)
+    fig2.add_trace(go.Scatter(
+        x=ch_sorted2['channel'], y=ch_sorted2['CPA'],
+        name='CPA (원)', mode='markers+lines+text',
+        marker=dict(size=14, color='white',
+                    line=dict(color=[C_CH.get(n, C_MUTED) for n in ch_sorted2['channel']], width=3)),
+        line=dict(color='#94a3b8', width=1.5, dash='dot'),
+        text=[f"₩{v:,.0f}" for v in ch_sorted2['CPA']],
+        textposition='top center', textfont=dict(size=10, color=C_TEXT),
+    ), secondary_y=True)
+
+    layout2 = base_layout(height=240, margin=dict(l=10, r=80, t=36, b=10))
+    layout2['title'] = dict(text="채널별 CTR(막대) vs CPA(점선) — 좌축: CTR, 우축: CPA",
+                            font=dict(size=12, color=C_MUTED), x=0)
+    layout2['yaxis']  = dict(title="CTR (%)", ticksuffix="%", showgrid=True,
+                              gridcolor="#f1f5f9", tickfont=dict(size=10, color=C_MUTED))
+    layout2['yaxis2'] = dict(title="CPA (원)", tickformat=",", showgrid=False,
+                              overlaying='y', side='right',
+                              tickfont=dict(size=10, color=C_MUTED))
+    layout2['legend'] = dict(orientation='h', y=1.1, font=dict(size=10))
     fig2.update_layout(**layout2)
-    # Quadrant labels
-    fig2.add_annotation(x=ch['CTR'].max()*0.9, y=ch['CPA'].max()*0.95,
-                        text="고CTR·고CPA", font=dict(size=9, color=C_WARN), showarrow=False)
-    fig2.add_annotation(x=ch['CTR'].min()*1.1, y=ch['CPA'].min()*1.05,
-                        text="저CTR·저CPA", font=dict(size=9, color=C_GOOD), showarrow=False)
+    fig2.update_xaxes(showgrid=False, tickfont=dict(size=11, color=C_TEXT))
     st.plotly_chart(fig2, use_container_width=True)
 
 finding("구글은 CPA ₩900으로 전체 평균(₩1,485) 대비 39% 저렴. 네이버검색은 CTR 11%로 압도적이나 CPA는 구글의 3.6배. "
