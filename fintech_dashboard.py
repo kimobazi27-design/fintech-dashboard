@@ -522,10 +522,10 @@ with tab_campaign:
         ('CVR',   'CVR (%)',    '높을수록 우수', '.1f', False),
         ('광고비비중', '광고비 비중 (%)', '예산 배분', '.1f', False),
     ]
+    st.caption("채널별 핵심 지표 비교 — 점선: 전체 평균")
     fig_sub = make_subplots(
         rows=1, cols=4,
-        subplot_titles=[f"{m[0]}<br><span style='font-size:9px;color:{C_MUTED}'>{m[2]}</span>"
-                        for m in metrics_ch],
+        subplot_titles=[f"{m[0]}  ({m[2]})" for m in metrics_ch],
     )
     ch_sorted_total = ch_total.sort_values('CPA')
 
@@ -562,13 +562,9 @@ with tab_campaign:
 
     fig_sub.update_layout(
         height=240,
-        margin=dict(l=10, r=10, t=55, b=10),
+        margin=dict(l=10, r=10, t=30, b=10),
         font=PLOTLY_FONT,
         plot_bgcolor=C_SURFACE, paper_bgcolor=C_SURFACE,
-        title=dict(
-            text="채널별 핵심 지표 비교 — 점선: 전체 평균 / 수치는 막대 안에 표기",
-            font=dict(size=12, color=C_MUTED), x=0
-        ),
     )
     for ci in range(1, 5):
         fig_sub.update_xaxes(showgrid=False, showticklabels=False,
