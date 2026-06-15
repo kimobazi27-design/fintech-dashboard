@@ -1542,35 +1542,35 @@ with col1:
     st.plotly_chart(fig, use_container_width=True)
 
 with col2:
-    # 예산비중 vs 성과비중 — "적게 쓰고 많이 버는가"
-    categories = ['예산 비중', '회원가입 비중']
-    fig2 = make_subplots(rows=1, cols=2,
-                         subplot_titles=['예산 배분 (%)', '회원가입 성과 (%)'])
-    for ci, metric in enumerate(['예산비중', '성과비중'], 1):
-        for _, row in ag.iterrows():
-            fig2.add_trace(go.Bar(
-                x=[row[metric]], y=[row['ad_group']],
-                orientation='h',
-                marker_color=ag_colors.get(row['ad_group'], C_MUTED),
-                text=[f"{row[metric]:.1f}%"],
-                textposition='inside', insidetextanchor='middle',
-                textfont=dict(size=12, color='white'),
-                width=0.5, showlegend=(ci == 1),
-                name=row['ad_group'],
-                hovertemplate=f"<b>{row['ad_group']}</b><br>{metric}: {row[metric]:.1f}%<extra></extra>",
-            ), row=1, col=ci)
+    # 예산비중 vs 성과비중 — 그룹 바, 텍스트 outside
+    fig2 = go.Figure()
+    metrics_pair = [('예산비중', '예산 배분'), ('성과비중', '회원가입 성과')]
+    for _, row in ag.sort_values('ad_group').iterrows():
+        c = ag_colors.get(row['ad_group'], C_MUTED)
+        fig2.add_trace(go.Bar(
+            name=row['ad_group'],
+            x=[m[1] for m in metrics_pair],
+            y=[row[m[0]] for m in metrics_pair],
+            marker_color=c,
+            text=[f"{row[m[0]]:.1f}%" for m in metrics_pair],
+            textposition='outside',
+            textfont=dict(size=12, color=C_TEXT, family=PLOTLY_FONT['family']),
+            width=0.35,
+            hovertemplate="<b>%{fullData.name}</b><br>%{x}: %{y:.1f}%<extra></extra>",
+        ))
 
     fig2.update_layout(
-        height=240, barmode='stack',
+        height=260, barmode='group',
         margin=dict(l=10, r=10, t=50, b=10),
         font=PLOTLY_FONT,
         plot_bgcolor=C_SURFACE, paper_bgcolor=C_SURFACE,
-        title=dict(text="예산 대비 성과 — 리타겟은 적은 예산으로 더 많은 회원 획득", font=dict(size=12, color=C_MUTED), x=0),
-        legend=dict(orientation='h', y=1.12, font=dict(size=10)),
+        title=dict(text="예산 대비 성과 — 리타겟은 적은 예산으로 더 많은 회원 획득",
+                   font=dict(size=12, color=C_MUTED), x=0),
+        legend=dict(orientation='h', y=1.1, font=dict(size=11)),
+        yaxis=dict(showgrid=True, gridcolor='#f1f5f9', ticksuffix='%',
+                   range=[0, 75], tickfont=dict(size=10, color=C_MUTED)),
+        xaxis=dict(showgrid=False, tickfont=dict(size=12, color=C_TEXT)),
     )
-    for ci in [1, 2]:
-        fig2.update_xaxes(showgrid=False, showticklabels=False, row=1, col=ci)
-        fig2.update_yaxes(showgrid=False, tickfont=dict(size=11, color=C_TEXT), row=1, col=ci)
     st.plotly_chart(fig2, use_container_width=True)
 
 finding(f"리타겟팅은 예산의 {리타겟['예산비중']:.0f}%만 받고 회원가입의 {리타겟['성과비중']:.0f}%를 창출 — "
