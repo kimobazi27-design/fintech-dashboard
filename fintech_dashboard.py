@@ -1346,7 +1346,7 @@ st.markdown("</div>", unsafe_allow_html=True)
 # INSIGHT 07 · 채널 × 목적 최적 조합
 # ══════════════════════════════════════════════════════════════════════════════
 st.markdown("<div class='insight-block'>", unsafe_allow_html=True)
-insight_card(7, "구글×회원가입 조합 CPA ₩788 — 네이버검색×계좌개설(₩3,810)의 1/5 비용",
+insight_card(7, "구글×회원가입 조합 CPA ₩788 — 네이버검색×계좌개설(₩3,810)의 약 1/5 비용 (4.8배 차이)",
              "12개 채널×목적 조합 중 최적 포트폴리오 도출")
 
 cx = d.groupby(['channel','campaign_objective']).agg(
