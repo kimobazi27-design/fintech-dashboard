@@ -378,80 +378,85 @@ with tab_campaign:
 
     st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
 
-    # ── 2패널 순위 차트: 왼쪽=회원가입 성과량 / 오른쪽=CPA 효율 ────────────────
-    # 같은 캠페인을 좌우로 나란히 → "많이 모았나" + "싸게 모았나" 동시 판단
-    top20 = camp.dropna(subset=['CPA']).nlargest(20, '회원가입').copy()
-    top20 = top20.sort_values('회원가입', ascending=True)  # 수평막대는 위가 1위
-    avg_cpa_t = camp['CPA'].mean()
+    # ── 캠페인 포지셔닝 산점도 ───────────────────────────────────────────────────
+    # X=회원가입 수(성과), Y=CPA(효율), Size=광고비, Color=채널
+    # 우하단(많이+싸게) = 승자 / 좌상단(적게+비싸게) = 재검토 필요
+    camp_sc = camp.dropna(subset=['CPA', '회원가입']).copy()
+    med_join = camp_sc['회원가입'].median()
+    med_cpa  = camp_sc['CPA'].median()
+    avg_cpa_t = camp_sc['CPA'].mean()
 
-    col_camp_l, col_camp_r = st.columns(2, gap="medium")
+    fig_sc = go.Figure()
 
-    with col_camp_l:
-        ch_palette = [C_CH.get(ch, C_MUTED) for ch in top20['channel']]
-        fig_camp_l = go.Figure()
-        fig_camp_l.add_trace(go.Bar(
-            y=top20['campaign_id'],
-            x=top20['회원가입'],
-            orientation='h',
-            marker_color=ch_palette,
-            text=[f"{v:,.0f}명" for v in top20['회원가입']],
-            textposition='outside',
-            textfont=dict(size=9, color=C_TEXT),
-            width=0.65,
-            customdata=top20[['channel','campaign_objective','CTR','CVR']].values,
+    # ── 사분면 배경 ──────────────────────────────────────────────────────────
+    x_max = camp_sc['회원가입'].max() * 1.25
+    y_max = camp_sc['CPA'].max() * 1.2
+    # 우하단 = 승자 (초록)
+    fig_sc.add_shape(type="rect", x0=med_join, x1=x_max, y0=0, y1=med_cpa,
+                     fillcolor="#f0fdf4", opacity=0.45, layer="below", line_width=0)
+    # 좌상단 = 비효율 (빨강)
+    fig_sc.add_shape(type="rect", x0=0, x1=med_join, y0=med_cpa, y1=y_max,
+                     fillcolor="#fef2f2", opacity=0.45, layer="below", line_width=0)
+    # 분할선
+    fig_sc.add_vline(x=med_join, line_dash="dot", line_color=C_BORDER, line_width=1.2)
+    fig_sc.add_hline(y=med_cpa,  line_dash="dot", line_color=C_BORDER, line_width=1.2)
+
+    # 사분면 레이블
+    fig_sc.add_annotation(x=x_max*0.88, y=med_cpa*0.15,
+        text="<b>승자 구간</b><br>고성과·저비용",
+        font=dict(size=10, color=C_GOOD), showarrow=False,
+        bgcolor="#f0fdf4", bordercolor="#bbf7d0", borderwidth=1, borderpad=5)
+    fig_sc.add_annotation(x=med_join*0.12, y=y_max*0.93,
+        text="<b>재검토 구간</b><br>저성과·고비용",
+        font=dict(size=10, color=C_BAD), showarrow=False,
+        bgcolor="#fef2f2", bordercolor="#fecaca", borderwidth=1, borderpad=5)
+
+    # ── 캠페인 점 (채널별 색상) ──────────────────────────────────────────────
+    for ch_name in camp_sc['channel'].unique():
+        sub = camp_sc[camp_sc['channel'] == ch_name]
+        c   = C_CH.get(ch_name, C_MUTED)
+        # 점 크기: 광고비 sqrt 정규화 (6~28px)
+        sizes = (np.sqrt(sub['광고비'] / sub['광고비'].max()) * 22 + 6).values
+        fig_sc.add_trace(go.Scatter(
+            x=sub['회원가입'], y=sub['CPA'],
+            mode='markers', name=ch_name,
+            marker=dict(size=sizes, color=c, opacity=0.75,
+                        line=dict(color='white', width=1.2)),
+            customdata=sub[['campaign_id','campaign_objective','CTR','CVR','광고비']].values,
             hovertemplate=(
-                "<b>%{y}</b><br>채널: %{customdata[0]}<br>목적: %{customdata[1]}<br>"
-                "회원가입: %{x:,}명<br>CTR: %{customdata[2]:.2f}%<br>CVR: %{customdata[3]:.1f}%<extra></extra>"
+                "<b>%{customdata[0]}</b><br>"
+                "채널: " + ch_name + " · %{customdata[1]}<br>"
+                "회원가입: %{x:,}명<br>"
+                "CPA: ₩%{y:,.0f}<br>"
+                "CTR: %{customdata[2]:.2f}%  CVR: %{customdata[3]:.1f}%<br>"
+                "광고비: ₩%{customdata[4]:,.0f}<extra></extra>"
             ),
         ))
-        # 범례 수동 (채널 색상)
-        for ch_name, c in C_CH.items():
-            fig_camp_l.add_trace(go.Bar(
-                y=[None], x=[None], name=ch_name,
-                marker_color=c, showlegend=True
-            ))
-        layout_l = base_layout(height=520, margin=dict(l=10, r=80, t=50, b=10))
-        layout_l['title'] = dict(text="회원가입 수 — 상위 20 캠페인 (색=채널)", font=dict(size=12, color=C_MUTED), x=0)
-        layout_l['xaxis']['title'] = "회원가입 수 (명)"
-        layout_l['xaxis']['tickformat'] = ","
-        layout_l['yaxis']['showgrid'] = False
-        layout_l['yaxis']['tickfont'] = dict(size=9)
-        layout_l['legend'] = dict(orientation='h', y=1.04, font=dict(size=10))
-        fig_camp_l.update_layout(**layout_l)
-        st.plotly_chart(fig_camp_l, use_container_width=True)
 
-    with col_camp_r:
-        # 같은 캠페인 순서 유지, CPA 색상 코딩
-        cpa_colors = [C_GOOD if v < avg_cpa_t else C_BAD for v in top20['CPA']]
-        fig_camp_r = go.Figure()
-        fig_camp_r.add_trace(go.Bar(
-            y=top20['campaign_id'],
-            x=top20['CPA'],
-            orientation='h',
-            marker_color=cpa_colors,
-            text=[f"₩{v:,.0f}" for v in top20['CPA']],
-            textposition='outside',
-            textfont=dict(size=9, color=C_TEXT),
-            width=0.65,
-            hovertemplate="<b>%{y}</b><br>CPA: ₩%{x:,.0f}<extra></extra>",
-        ))
-        fig_camp_r.add_vline(
-            x=avg_cpa_t, line_dash="dot", line_color=C_MUTED, line_width=1.5,
-            annotation_text=f" 평균 ₩{avg_cpa_t:,.0f}",
-            annotation_font=dict(size=9, color=C_MUTED),
-            annotation_position="top right"
+    # ── 상위 5 캠페인 이름 레이블 (승자 구간에서 회원가입 많은 순) ────────────
+    winners = camp_sc[(camp_sc['회원가입'] >= med_join) & (camp_sc['CPA'] <= med_cpa)]
+    top5_w  = winners.nlargest(5, '회원가입')
+    for _, row in top5_w.iterrows():
+        fig_sc.add_annotation(
+            x=row['회원가입'], y=row['CPA'],
+            text=f"  {row['campaign_id']}",
+            font=dict(size=8, color=C_GOOD),
+            showarrow=False, xanchor='left'
         )
-        layout_r = base_layout(height=520, margin=dict(l=10, r=80, t=50, b=10))
-        layout_r['title'] = dict(text="CPA — 동일 캠페인 비용 효율 (초록=평균 이하·우수)", font=dict(size=12, color=C_MUTED), x=0)
-        layout_r['xaxis']['title'] = "CPA (원)"
-        layout_r['xaxis']['tickformat'] = ","
-        layout_r['yaxis']['showgrid'] = False
-        layout_r['yaxis']['tickfont'] = dict(size=9)
-        layout_r['showlegend'] = False
-        fig_camp_r.update_layout(**layout_r)
-        st.plotly_chart(fig_camp_r, use_container_width=True)
 
-    st.caption("두 차트의 y축 캠페인 순서가 동일 — 왼쪽에서 성과(회원가입 수), 오른쪽에서 효율(CPA)을 동시에 읽으세요.")
+    layout_sc = base_layout(height=460, margin=dict(l=10, r=20, t=50, b=10))
+    layout_sc['title'] = dict(
+        text="캠페인 포지셔닝 맵 — X: 회원가입 수(많을수록↑) · Y: CPA(낮을수록↑) · 버블 크기: 광고비",
+        font=dict(size=12, color=C_MUTED), x=0
+    )
+    layout_sc['xaxis']['title'] = "회원가입 수 (명, 많을수록 우수)"
+    layout_sc['xaxis']['tickformat'] = ","
+    layout_sc['yaxis']['title'] = "CPA (원, 낮을수록 우수)"
+    layout_sc['yaxis']['tickformat'] = ","
+    layout_sc['legend'] = dict(orientation='h', y=1.06, font=dict(size=11))
+    fig_sc.update_layout(**layout_sc)
+    st.plotly_chart(fig_sc, use_container_width=True)
+    st.caption(f"중앙값 기준선: 회원가입 {med_join:,.0f}명 · CPA ₩{med_cpa:,.0f} | 초록 구간 캠페인 이름 레이블 = 승자 Top 5 | 각 점에 마우스를 올리면 상세 지표 확인 가능")
 
     # 상세 테이블
     with st.expander("전체 캠페인 상세 데이터"):
