@@ -874,63 +874,71 @@ with tab_hierarchy:
         f"채널별 핵심 지표 비교</div>",
         unsafe_allow_html=True
     )
+    # 채널 간 실제로 차이나는 지표만 사용
     ch_hier = d.groupby('channel').agg(
         광고노출=('광고노출','sum'), 광고클릭=('광고클릭','sum'),
-        앱실행=('앱실행','sum'), 회원가입=('회원가입','sum'),
-        첫거래=('첫거래','sum'), 반복사용=('반복사용','sum')
+        광고비=('광고비','sum'), 회원가입=('회원가입','sum'),
     ).reset_index()
-    ch_hier['CTR']  = ch_hier['광고클릭']  / ch_hier['광고노출']  * 100
-    ch_hier['CVR']  = ch_hier['회원가입']  / ch_hier['앱실행']    * 100
-    ch_hier['거래율'] = ch_hier['첫거래']  / ch_hier['회원가입']  * 100
-    ch_hier['리텐션'] = ch_hier['반복사용'] / ch_hier['첫거래']   * 100
+    ch_hier['CTR']      = ch_hier['광고클릭'] / ch_hier['광고노출'] * 100
+    ch_hier['CPA']      = ch_hier['광고비']   / ch_hier['회원가입']
+    ch_hier['CVR']      = ch_hier['회원가입'] / ch_hier['광고클릭'] * 100   # 클릭→가입
+    ch_hier['예산비중']  = ch_hier['광고비']   / ch_hier['광고비'].sum() * 100
 
-    # ── 4분할 서브플롯: 지표별 스케일이 달라 같은 축에 넣으면 겹침 ──────────
-    hier_metrics = [
-        ('CTR',   'CTR (%)',  '클릭률',   C_BAD,    '.2f'),
-        ('CVR',   'CVR (%)',  '앱실행→가입', C_GOOD, '.1f'),
-        ('거래율', '거래율 (%)', '가입→첫거래', C_WARN,  '.1f'),
-        ('리텐션', '리텐션 (%)', '첫거래→반복', C_ACCENT,'.1f'),
-    ]
-    fig_hier = make_subplots(
-        rows=1, cols=4,
-        subplot_titles=[m[2] for m in hier_metrics],
-        shared_yaxes=False,
-    )
+    # CTR 오름차순 정렬 (구글·페이스북·네이버검색 순)
     ch_order = ch_hier.sort_values('CTR')['channel'].tolist()
 
-    for col_idx, (metric, ytitle, subtitle, color, fmt) in enumerate(hier_metrics, 1):
-        vals = [ch_hier[ch_hier['channel']==ch][metric].values[0] for ch in ch_order]
+    # ── 4분할 서브플롯: 채널 간 유의미한 차이가 있는 지표만 ─────────────────
+    hier_metrics = [
+        ('CPA',    'CPA',     '낮을수록 우수',  ',.0f', False, '원'),
+        ('CTR',    'CTR',     '높을수록 우수',  '.2f',  False, '%'),
+        ('CVR',    'CVR',     '클릭→가입',      '.1f',  False, '%'),
+        ('예산비중','예산비중', '광고비 배분',    '.1f',  False, '%'),
+    ]
+    st.caption("채널별 핵심 지표 비교 — 점선: 전체 평균  |  CPA·CTR·CVR(클릭→가입)·예산비중은 채널 간 실제 차이가 있는 지표")
+
+    fig_hier = make_subplots(
+        rows=1, cols=4,
+        subplot_titles=[f"{m[0]}  ({m[2]})" for m in hier_metrics],
+        shared_yaxes=False,
+    )
+
+    for col_idx, (metric, label, note, fmt, _, unit) in enumerate(hier_metrics, 1):
+        vals      = [ch_hier[ch_hier['channel']==ch][metric].values[0] for ch in ch_order]
         bar_colors = [C_CH.get(ch, C_MUTED) for ch in ch_order]
+
+        if metric == 'CPA':
+            text_vals = [f"₩{v:,.0f}" for v in vals]
+            hover_tmpl = f"<b>%{{y}}</b><br>CPA: ₩%{{x:,.0f}}<extra></extra>"
+        else:
+            text_vals = [f"{v:{fmt}}%" for v in vals]
+            hover_tmpl = f"<b>%{{y}}</b><br>{label}: %{{x:{fmt}}}%<extra></extra>"
+
         fig_hier.add_trace(go.Bar(
             x=vals, y=ch_order,
             orientation='h',
             marker_color=bar_colors,
-            text=[f"{v:{fmt}}%" for v in vals],
-            textposition='outside',
-            textfont=dict(size=11, color=C_TEXT),
-            width=0.5,
+            text=text_vals,
+            textposition='inside',
+            insidetextanchor='middle',
+            textfont=dict(size=11, color='white', family=PLOTLY_FONT['family']),
+            width=0.55,
             showlegend=False,
-            hovertemplate=f"<b>%{{y}}</b><br>{metric}: %{{x:{fmt}}}%<extra></extra>",
+            hovertemplate=hover_tmpl,
         ), row=1, col=col_idx)
-        # 전체 평균선
+
         avg_v = ch_hier[metric].mean()
-        fig_hier.add_vline(
-            x=avg_v, line_dash="dot", line_color="#cbd5e1", line_width=1.2,
-            row=1, col=col_idx
-        )
+        fig_hier.add_vline(x=avg_v, line_dash="dot", line_color="#cbd5e1",
+                           line_width=1.5, row=1, col=col_idx)
 
     fig_hier.update_layout(
-        height=260,
-        margin=dict(l=10, r=20, t=50, b=10),
+        height=240,
+        margin=dict(l=10, r=10, t=40, b=10),
         font=PLOTLY_FONT,
         plot_bgcolor=C_SURFACE, paper_bgcolor=C_SURFACE,
-        title=dict(text="채널별 핵심 지표 — 지표마다 별도 축으로 정확히 비교 (점선 = 전체 평균)",
-                   font=dict(size=12, color=C_MUTED), x=0),
     )
     for i in range(1, 5):
-        fig_hier.update_xaxes(showgrid=False, ticksuffix="%",
-                               tickfont=dict(size=9, color=C_MUTED), row=1, col=i)
-        fig_hier.update_yaxes(showgrid=False, tickfont=dict(size=10, color=C_TEXT), row=1, col=i)
+        fig_hier.update_xaxes(showgrid=False, showticklabels=False, row=1, col=i)
+        fig_hier.update_yaxes(showgrid=False, tickfont=dict(size=11, color=C_TEXT), row=1, col=i)
     st.plotly_chart(fig_hier, use_container_width=True)
 
 st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
