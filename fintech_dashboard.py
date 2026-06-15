@@ -346,6 +346,112 @@ st.markdown(f"""
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# EXECUTIVE SUMMARY
+# ══════════════════════════════════════════════════════════════════════════════
+# 핵심 지표 사전 계산
+_구글_cpa   = d[d['channel']=='구글']['광고비'].sum() / d[d['channel']=='구글']['회원가입'].sum()
+_naver_ctr  = d[d['channel']=='네이버검색']['광고클릭'].sum() / d[d['channel']=='네이버검색']['광고노출'].sum() * 100
+_funnel_loss = (1 - d['광고클릭'].sum() / d['광고노출'].sum()) * 100
+_cx = d.groupby(['channel','campaign_objective']).agg(광고비=('광고비','sum'), 회원가입=('회원가입','sum')).reset_index()
+_cx['CPA'] = _cx['광고비'] / _cx['회원가입']
+_best_cpa  = _cx['CPA'].min()
+_worst_cpa = _cx['CPA'].max()
+
+st.markdown(f"""
+<div style="
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+    border-radius: 14px;
+    padding: 24px 28px;
+    margin-bottom: 24px;
+    position: relative;
+    overflow: hidden;
+">
+  <!-- 배경 장식 -->
+  <div style="
+      position:absolute; top:-30px; right:-30px;
+      width:160px; height:160px; border-radius:50%;
+      background: rgba(5,150,105,0.08);
+  "></div>
+  <div style="
+      position:absolute; bottom:-20px; left:40%;
+      width:100px; height:100px; border-radius:50%;
+      background: rgba(37,99,235,0.07);
+  "></div>
+
+  <!-- 헤더 -->
+  <div style="
+      font-size:10px; font-weight:700; color:#475569;
+      text-transform:uppercase; letter-spacing:1.2px; margin-bottom:16px;
+  ">Executive Summary · 2025 핀테크 광고 성과</div>
+
+  <!-- 3대 핵심 발견 -->
+  <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; margin-bottom:20px;">
+
+    <div style="background:rgba(255,255,255,0.04); border-radius:10px; padding:16px; border-left:3px solid #059669;">
+      <div style="font-size:9px; font-weight:700; color:#34d399; text-transform:uppercase; letter-spacing:.6px; margin-bottom:8px;">① 채널 효율 격차</div>
+      <div style="font-size:22px; font-weight:800; color:#ffffff; letter-spacing:-0.5px; line-height:1.1; margin-bottom:6px;">
+        구글 CPA<br><span style="color:#34d399;">₩{_구글_cpa:,.0f}</span>
+      </div>
+      <div style="font-size:11px; color:#94a3b8; line-height:1.5;">
+        전체 평균(₩{cpa:,.0f}) 대비 <b style="color:#6ee7b7;">39% 저렴</b><br>
+        네이버검색은 CTR {_naver_ctr:.1f}%로 높으나<br>CPA는 구글의 3.6배
+      </div>
+    </div>
+
+    <div style="background:rgba(255,255,255,0.04); border-radius:10px; padding:16px; border-left:3px solid #dc2626;">
+      <div style="font-size:9px; font-weight:700; color:#f87171; text-transform:uppercase; letter-spacing:.6px; margin-bottom:8px;">② 퍼널 병목</div>
+      <div style="font-size:22px; font-weight:800; color:#ffffff; letter-spacing:-0.5px; line-height:1.1; margin-bottom:6px;">
+        노출→클릭<br><span style="color:#f87171;">{_funnel_loss:.1f}% 이탈</span>
+      </div>
+      <div style="font-size:11px; color:#94a3b8; line-height:1.5;">
+        전체 예산의 손실이 첫 단계에서 발생<br>
+        클릭→설치(56%)·설치→실행(90%)은<br>이미 최적화 완료 — <b style="color:#fca5a5;">CTR이 유일한 레버</b>
+      </div>
+    </div>
+
+    <div style="background:rgba(255,255,255,0.04); border-radius:10px; padding:16px; border-left:3px solid #2563eb;">
+      <div style="font-size:9px; font-weight:700; color:#60a5fa; text-transform:uppercase; letter-spacing:.6px; margin-bottom:8px;">③ 리텐션 구조</div>
+      <div style="font-size:22px; font-weight:800; color:#ffffff; letter-spacing:-0.5px; line-height:1.1; margin-bottom:6px;">
+        전 채널<br><span style="color:#60a5fa;">25% 수렴</span>
+      </div>
+      <div style="font-size:11px; color:#94a3b8; line-height:1.5;">
+        채널·소재·타겟 무관하게 반복사용률 동일<br>
+        <b style="color:#93c5fd;">마케팅이 아닌 제품이 리텐션 결정</b><br>
+        자동이체 설정률과 강한 양의 상관(r=0.84)
+      </div>
+    </div>
+
+  </div>
+
+  <!-- 즉시 실행 액션 -->
+  <div style="
+      background:rgba(255,255,255,0.03);
+      border:1px solid rgba(255,255,255,0.08);
+      border-radius:8px; padding:12px 16px;
+      display:grid; grid-template-columns:auto 1fr 1fr 1fr; gap:0;
+      align-items:center;
+  ">
+    <div style="font-size:9px; font-weight:700; color:#475569; text-transform:uppercase; letter-spacing:.8px; padding-right:16px; border-right:1px solid rgba(255,255,255,0.08);">
+      즉시<br>실행
+    </div>
+    <div style="padding: 0 16px; border-right:1px solid rgba(255,255,255,0.08);">
+      <div style="font-size:9px; color:#64748b; margin-bottom:2px;">ACTION 1</div>
+      <div style="font-size:11px; color:#e2e8f0;">구글 예산 비중 <b style="color:#34d399;">25% → 35%</b> 확대</div>
+    </div>
+    <div style="padding: 0 16px; border-right:1px solid rgba(255,255,255,0.08);">
+      <div style="font-size:9px; color:#64748b; margin-bottom:2px;">ACTION 2</div>
+      <div style="font-size:11px; color:#e2e8f0;">크리에이티브 A/B 테스트로 <b style="color:#f87171;">CTR 2배</b> 목표</div>
+    </div>
+    <div style="padding: 0 16px;">
+      <div style="font-size:9px; color:#64748b; margin-bottom:2px;">ACTION 3</div>
+      <div style="font-size:11px; color:#e2e8f0;">가입 직후 자동이체 설정 넛지 <b style="color:#60a5fa;">즉시 구현</b></div>
+    </div>
+  </div>
+
+</div>
+""", unsafe_allow_html=True)
+
+# ══════════════════════════════════════════════════════════════════════════════
 # 성과 개요 탭 — 캠페인별 성과 / CVR 분석 / 메트릭 하이어라키
 # ══════════════════════════════════════════════════════════════════════════════
 tab_campaign, tab_cvr, tab_hierarchy = st.tabs([
