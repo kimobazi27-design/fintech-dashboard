@@ -534,16 +534,23 @@ with tab_campaign:
         ch_names = ch_sorted_total['channel'].values
         colors_m = [C_CH.get(ch, C_MUTED) for ch in ch_names]
 
+        # 텍스트는 막대 안(inside) + 짧은 포맷으로 겹침 방지
+        short_text = []
+        for v in vals:
+            if ci == 1:   short_text.append(f"₩{v/1000:.0f}K")   # CPA: 천원 단위
+            elif ci == 4: short_text.append(f"{v:.0f}%")           # 광고비비중
+            else:         short_text.append(f"{v:.1f}%")            # CTR, CVR
+
         fig_sub.add_trace(go.Bar(
             x=vals,
             y=ch_names,
             orientation='h',
             marker_color=colors_m,
-            text=[f"{v:{fmt}}{'%' if ci>1 else '원'}" if ci > 1 else f"₩{v:,.0f}"
-                  for v in vals],
-            textposition='outside',
-            textfont=dict(size=11, color=C_TEXT),
-            width=0.5,
+            text=short_text,
+            textposition='inside',
+            insidetextanchor='middle',
+            textfont=dict(size=11, color='white', family=PLOTLY_FONT['family']),
+            width=0.55,
             showlegend=False,
             hovertemplate=f"<b>%{{y}}</b><br>{metric}: %{{x:{fmt}}}<extra></extra>",
         ), row=1, col=ci)
@@ -551,22 +558,23 @@ with tab_campaign:
         # 전체 평균선
         avg_v = ch_total[metric].mean()
         fig_sub.add_vline(x=avg_v, line_dash="dot", line_color="#cbd5e1",
-                          line_width=1.2, row=1, col=ci)
+                          line_width=1.5, row=1, col=ci)
 
     fig_sub.update_layout(
-        height=220,
-        margin=dict(l=10, r=20, t=55, b=10),
+        height=240,
+        margin=dict(l=10, r=10, t=55, b=10),
         font=PLOTLY_FONT,
         plot_bgcolor=C_SURFACE, paper_bgcolor=C_SURFACE,
         title=dict(
-            text="채널별 핵심 지표 비교 — 점선: 전체 평균",
+            text="채널별 핵심 지표 비교 — 점선: 전체 평균 / 수치는 막대 안에 표기",
             font=dict(size=12, color=C_MUTED), x=0
         ),
     )
     for ci in range(1, 5):
-        fig_sub.update_xaxes(showgrid=False, tickfont=dict(size=9, color=C_MUTED),
+        fig_sub.update_xaxes(showgrid=False, showticklabels=False,
                               row=1, col=ci)
-        fig_sub.update_yaxes(showgrid=False, tickfont=dict(size=11, color=C_TEXT),
+        fig_sub.update_yaxes(showgrid=False,
+                              tickfont=dict(size=11, color=C_TEXT),
                               row=1, col=ci)
     st.plotly_chart(fig_sub, use_container_width=True)
 
