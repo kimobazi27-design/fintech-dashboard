@@ -378,63 +378,80 @@ with tab_campaign:
 
     st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
 
-    # ── 캠페인 다지표 성과 히트맵 ─────────────────────────────────────────────
-    # 목적: 캠페인별 CTR / CVR / CPA / 회원가입을 한 장에서 상대적으로 비교
-    # 상위 25개 캠페인 (회원가입 수 기준)
-    top25 = camp.dropna(subset=['CTR','CVR','CPA']).nlargest(25, '회원가입').copy()
+    # ── 2패널 순위 차트: 왼쪽=회원가입 성과량 / 오른쪽=CPA 효율 ────────────────
+    # 같은 캠페인을 좌우로 나란히 → "많이 모았나" + "싸게 모았나" 동시 판단
+    top20 = camp.dropna(subset=['CPA']).nlargest(20, '회원가입').copy()
+    top20 = top20.sort_values('회원가입', ascending=True)  # 수평막대는 위가 1위
+    avg_cpa_t = camp['CPA'].mean()
 
-    # 각 지표를 0~1로 정규화 (CPA는 낮을수록 좋으니 반전)
-    def norm(s, invert=False):
-        mn, mx = s.min(), s.max()
-        n = (s - mn) / (mx - mn) if mx > mn else s * 0
-        return 1 - n if invert else n
+    col_camp_l, col_camp_r = st.columns(2, gap="medium")
 
-    top25['n_CTR']  = norm(top25['CTR'])
-    top25['n_CVR']  = norm(top25['CVR'])
-    top25['n_CPA']  = norm(top25['CPA'], invert=True)   # 낮을수록 좋음
-    top25['n_join'] = norm(top25['회원가입'])
+    with col_camp_l:
+        ch_palette = [C_CH.get(ch, C_MUTED) for ch in top20['channel']]
+        fig_camp_l = go.Figure()
+        fig_camp_l.add_trace(go.Bar(
+            y=top20['campaign_id'],
+            x=top20['회원가입'],
+            orientation='h',
+            marker_color=ch_palette,
+            text=[f"{v:,.0f}명" for v in top20['회원가입']],
+            textposition='outside',
+            textfont=dict(size=9, color=C_TEXT),
+            width=0.65,
+            customdata=top20[['channel','campaign_objective','CTR','CVR']].values,
+            hovertemplate=(
+                "<b>%{y}</b><br>채널: %{customdata[0]}<br>목적: %{customdata[1]}<br>"
+                "회원가입: %{x:,}명<br>CTR: %{customdata[2]:.2f}%<br>CVR: %{customdata[3]:.1f}%<extra></extra>"
+            ),
+        ))
+        # 범례 수동 (채널 색상)
+        for ch_name, c in C_CH.items():
+            fig_camp_l.add_trace(go.Bar(
+                y=[None], x=[None], name=ch_name,
+                marker_color=c, showlegend=True
+            ))
+        layout_l = base_layout(height=520, margin=dict(l=10, r=80, t=50, b=10))
+        layout_l['title'] = dict(text="회원가입 수 — 상위 20 캠페인 (색=채널)", font=dict(size=12, color=C_MUTED), x=0)
+        layout_l['xaxis']['title'] = "회원가입 수 (명)"
+        layout_l['xaxis']['tickformat'] = ","
+        layout_l['yaxis']['showgrid'] = False
+        layout_l['yaxis']['tickfont'] = dict(size=9)
+        layout_l['legend'] = dict(orientation='h', y=1.04, font=dict(size=10))
+        fig_camp_l.update_layout(**layout_l)
+        st.plotly_chart(fig_camp_l, use_container_width=True)
 
-    # 히트맵용 행렬 구성
-    metrics   = ['CTR', 'CVR', 'CPA(효율)', '회원가입']
-    norm_cols = ['n_CTR','n_CVR','n_CPA','n_join']
-    raw_cols  = ['CTR','CVR','CPA','회원가입']
-    fmt_fns   = [lambda v: f"{v:.2f}%", lambda v: f"{v:.1f}%",
-                 lambda v: f"₩{v:,.0f}", lambda v: f"{v:,.0f}명"]
+    with col_camp_r:
+        # 같은 캠페인 순서 유지, CPA 색상 코딩
+        cpa_colors = [C_GOOD if v < avg_cpa_t else C_BAD for v in top20['CPA']]
+        fig_camp_r = go.Figure()
+        fig_camp_r.add_trace(go.Bar(
+            y=top20['campaign_id'],
+            x=top20['CPA'],
+            orientation='h',
+            marker_color=cpa_colors,
+            text=[f"₩{v:,.0f}" for v in top20['CPA']],
+            textposition='outside',
+            textfont=dict(size=9, color=C_TEXT),
+            width=0.65,
+            hovertemplate="<b>%{y}</b><br>CPA: ₩%{x:,.0f}<extra></extra>",
+        ))
+        fig_camp_r.add_vline(
+            x=avg_cpa_t, line_dash="dot", line_color=C_MUTED, line_width=1.5,
+            annotation_text=f" 평균 ₩{avg_cpa_t:,.0f}",
+            annotation_font=dict(size=9, color=C_MUTED),
+            annotation_position="top right"
+        )
+        layout_r = base_layout(height=520, margin=dict(l=10, r=80, t=50, b=10))
+        layout_r['title'] = dict(text="CPA — 동일 캠페인 비용 효율 (초록=평균 이하·우수)", font=dict(size=12, color=C_MUTED), x=0)
+        layout_r['xaxis']['title'] = "CPA (원)"
+        layout_r['xaxis']['tickformat'] = ","
+        layout_r['yaxis']['showgrid'] = False
+        layout_r['yaxis']['tickfont'] = dict(size=9)
+        layout_r['showlegend'] = False
+        fig_camp_r.update_layout(**layout_r)
+        st.plotly_chart(fig_camp_r, use_container_width=True)
 
-    z_matrix   = top25[norm_cols].values.T.tolist()
-    text_matrix = [
-        [fmt_fns[i](top25.iloc[j][raw_cols[i]]) for j in range(len(top25))]
-        for i in range(4)
-    ]
-    camp_labels = top25['campaign_id'].tolist()
-
-    fig_hm_camp = go.Figure(go.Heatmap(
-        z=z_matrix,
-        x=camp_labels,
-        y=metrics,
-        text=text_matrix,
-        texttemplate="%{text}",
-        textfont=dict(size=9, family=PLOTLY_FONT['family']),
-        colorscale=[(0,"#fef2f2"),(0.5,"#fde68a"),(1,"#d1fae5")],
-        showscale=False,
-        hovertemplate="<b>%{x}</b><br>%{y}: %{text}<extra></extra>",
-        zmin=0, zmax=1,
-        xgap=2, ygap=3,
-    ))
-    layout_hm_camp = base_layout(height=300, margin=dict(l=10, r=10, t=50, b=90))
-    layout_hm_camp['title'] = dict(
-        text="캠페인별 성과 히트맵 — 회원가입 상위 25개 캠페인 · 색상=상대 우열 (진초록=우수, 진빨강=열위)",
-        font=dict(size=12, color=C_MUTED), x=0
-    )
-    layout_hm_camp['xaxis']['tickangle'] = -40
-    layout_hm_camp['xaxis']['tickfont']['size'] = 8
-    layout_hm_camp['yaxis']['showgrid'] = False
-    layout_hm_camp['yaxis']['tickfont']['size'] = 11
-    layout_hm_camp['showlegend'] = False
-    fig_hm_camp.update_layout(**layout_hm_camp)
-    st.plotly_chart(fig_hm_camp, use_container_width=True)
-
-    st.caption("각 지표는 25개 캠페인 내 상대 순위로 색상화. CPA는 낮을수록 초록(우수). 절대값은 셀에 표시.")
+    st.caption("두 차트의 y축 캠페인 순서가 동일 — 왼쪽에서 성과(회원가입 수), 오른쪽에서 효율(CPA)을 동시에 읽으세요.")
 
     # 상세 테이블
     with st.expander("전체 캠페인 상세 데이터"):
@@ -492,79 +509,95 @@ with tab_cvr:
     # 전환율
     conv_rates = [funnel_vals_w[i+1]/funnel_vals_w[i]*100 for i in range(len(funnel_vals_w)-1)]
 
-    col_wf_a, col_wf_b = st.columns([3, 2], gap="medium")
+    col_wf_a, col_wf_b = st.columns([1, 1], gap="medium")
 
     with col_wf_a:
-        # 이탈자 수 워터폴 (막대 높이 = 이탈 규모)
+        # 이전 단계 대비 이탈률(%) — 절대수 대신 비율로 모든 막대를 균등하게
         drop_labels = [f"{funnel_labels[i]}→{funnel_labels[i+1]}" for i in range(len(funnel_vals_w)-1)]
-        drop_colors = [C_BAD if d_v == max(dropoffs) else
-                       "#f59e0b" if d_v > np.percentile(dropoffs, 66) else
-                       "#6ee7b7" for d_v in dropoffs]
+        drop_rates_pct = [100 - r for r in conv_rates]   # 이탈률 = 100 - 전환율
+
+        bar_colors = []
+        for r in drop_rates_pct:
+            if r > 80:   bar_colors.append(C_BAD)
+            elif r > 40: bar_colors.append(C_WARN)
+            else:        bar_colors.append(C_GOOD)
 
         fig_wf = go.Figure()
         fig_wf.add_trace(go.Bar(
             x=drop_labels,
-            y=dropoffs,
-            marker_color=drop_colors,
-            text=[f"{fmt_num(v)}\n({100-r:.1f}% 이탈)" for v, r in zip(dropoffs, conv_rates)],
+            y=drop_rates_pct,
+            marker_color=bar_colors,
+            text=[f"{r:.1f}%<br>({fmt_num(d_v)}명)" for r, d_v in zip(drop_rates_pct, dropoffs)],
             textposition='outside',
             textfont=dict(size=9, color=C_TEXT, family=PLOTLY_FONT['family']),
             width=0.6,
-            hovertemplate="<b>%{x}</b><br>이탈자: %{y:,}명<extra></extra>",
+            hovertemplate="<b>%{x}</b><br>이탈률: %{y:.1f}%<br>이탈 인원: %{customdata}<extra></extra>",
+            customdata=[fmt_num(v) + "명" for v in dropoffs],
         ))
+        # 50% 기준선
+        fig_wf.add_hline(y=50, line_dash="dot", line_color=C_MUTED, line_width=1.2,
+                          annotation_text=" 50% 기준",
+                          annotation_font=dict(size=9, color=C_MUTED),
+                          annotation_position="right")
         # 최대 이탈 어노테이션
-        max_idx = dropoffs.index(max(dropoffs))
+        max_idx = drop_rates_pct.index(max(drop_rates_pct))
         fig_wf.add_annotation(
-            x=max_idx, y=max(dropoffs) * 1.02,
-            text=f"<b>최대 이탈<br>{fmt_num(max(dropoffs))}명</b>",
+            x=max_idx, y=max(drop_rates_pct) + 3,
+            text=f"<b>최대 이탈 {max(drop_rates_pct):.1f}%</b>",
             font=dict(size=10, color=C_BAD),
-            showarrow=True, arrowhead=2, arrowcolor=C_BAD,
+            showarrow=False,
             bgcolor="#fef2f2", bordercolor=C_BAD, borderwidth=1, borderpad=4,
-            ay=-45
         )
-        layout_wf = base_layout(height=360, margin=dict(l=10, r=10, t=50, b=80))
+        layout_wf = base_layout(height=380, margin=dict(l=10, r=10, t=50, b=75))
         layout_wf['title'] = dict(
-            text="단계별 이탈자 수 — 막대 높이 = 해당 단계에서 빠져나간 절대 인원 (빨강=최대 이탈)",
+            text="단계별 이탈률 — 이전 단계 대비 몇 %가 빠져나갔나 (괄호=절대 이탈 인원)",
             font=dict(size=12, color=C_MUTED), x=0
         )
-        layout_wf['xaxis']['tickangle'] = -30
+        layout_wf['xaxis']['tickangle'] = -25
         layout_wf['xaxis']['tickfont']['size'] = 9
-        layout_wf['yaxis']['title'] = "이탈자 수 (명)"
-        layout_wf['yaxis']['tickformat'] = ","
+        layout_wf['yaxis']['title'] = "이탈률 (%)"
+        layout_wf['yaxis']['ticksuffix'] = "%"
+        layout_wf['yaxis']['range'] = [0, 115]
         layout_wf['showlegend'] = False
         fig_wf.update_layout(**layout_wf)
         st.plotly_chart(fig_wf, use_container_width=True)
 
     with col_wf_b:
-        # 잔존 유저 누적 유지율 — 광고 클릭을 100%로 기준
-        base = funnel_vals_w[1]  # 광고 클릭 기준
-        retain_pct = [v / base * 100 for v in funnel_vals_w[1:]]
-        ret_colors = [C_BAD if r < 10 else C_WARN if r < 50 else C_GOOD for r in retain_pct]
+        # 전환율(%) 수평 막대 — 이탈률의 반대면, 각 단계에서 살아남은 비율
+        conv_colors = []
+        for r in conv_rates:
+            if r > 70:   conv_colors.append(C_GOOD)
+            elif r > 30: conv_colors.append(C_WARN)
+            else:        conv_colors.append(C_BAD)
 
-        fig_ret = go.Figure()
-        fig_ret.add_trace(go.Bar(
-            y=funnel_labels[1:],
-            x=retain_pct,
+        fig_conv = go.Figure()
+        fig_conv.add_trace(go.Bar(
+            y=drop_labels[::-1],      # 역순: 위가 퍼널 상단
+            x=conv_rates[::-1],
             orientation='h',
-            marker_color=ret_colors,
-            text=[f"{r:.1f}%" for r in retain_pct],
+            marker_color=conv_colors[::-1],
+            text=[f"{r:.1f}%" for r in conv_rates[::-1]],
             textposition='outside',
-            textfont=dict(size=11, color=C_TEXT),
-            width=0.55,
+            textfont=dict(size=10, color=C_TEXT),
+            width=0.6,
+            hovertemplate="<b>%{y}</b><br>전환율: %{x:.1f}%<extra></extra>",
         ))
-        fig_ret.add_vline(x=100, line_dash="dot", line_color=C_BORDER, line_width=1)
-        layout_ret = base_layout(height=360, margin=dict(l=10, r=60, t=50, b=10))
-        layout_ret['title'] = dict(
-            text="클릭 대비 잔존율 — 클릭=100% 기준으로 각 단계까지 몇 %가 남아있나",
+        fig_conv.add_vline(x=50, line_dash="dot", line_color=C_MUTED, line_width=1.2,
+                           annotation_text=" 50%",
+                           annotation_font=dict(size=9, color=C_MUTED))
+        layout_conv = base_layout(height=380, margin=dict(l=10, r=60, t=50, b=10))
+        layout_conv['title'] = dict(
+            text="단계별 전환율 — 이전 단계에서 다음으로 넘어간 비율 (초록=양호)",
             font=dict(size=12, color=C_MUTED), x=0
         )
-        layout_ret['xaxis']['title'] = "클릭 대비 잔존율 (%)"
-        layout_ret['xaxis']['ticksuffix'] = "%"
-        layout_ret['xaxis']['range'] = [0, 115]
-        layout_ret['yaxis']['showgrid'] = False
-        layout_ret['showlegend'] = False
-        fig_ret.update_layout(**layout_ret)
-        st.plotly_chart(fig_ret, use_container_width=True)
+        layout_conv['xaxis']['title'] = "전환율 (%)"
+        layout_conv['xaxis']['ticksuffix'] = "%"
+        layout_conv['xaxis']['range'] = [0, 115]
+        layout_conv['yaxis']['showgrid'] = False
+        layout_conv['yaxis']['tickfont']['size'] = 9
+        layout_conv['showlegend'] = False
+        fig_conv.update_layout(**layout_conv)
+        st.plotly_chart(fig_conv, use_container_width=True)
 
 
 # ── 탭 3: 메트릭 하이어라키 (Plotly 도형 기반) ────────────────────────────────
