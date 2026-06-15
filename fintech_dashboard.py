@@ -378,82 +378,49 @@ with tab_campaign:
 
     st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
 
-    # ── A안: 탭은 데이터 탐색 중심 — 차트는 인사이트와 겹치지 않는 것만 ──────
-    # CPA 순위 (상위 15) — 인사이트에 없는 캠페인 단위 분석
-    col_ta, col_tb = st.columns(2, gap="medium")
+    # ── Treemap: 예산 크기(면적) + CPA 효율(색상) 75개 캠페인 한 장에 ──────────
+    import plotly.express as px
 
-    with col_ta:
-        top_camp = camp.nsmallest(15, 'CPA')
-        avg_camp_cpa = camp['CPA'].mean()
-        fig_c = go.Figure()
-        fig_c.add_trace(go.Bar(
-            x=top_camp['CPA'], y=top_camp['campaign_id'],
-            orientation='h',
-            marker_color=[C_GOOD if v < avg_camp_cpa else "#94a3b8" for v in top_camp['CPA']],
-            text=[f"₩{v:,.0f}" for v in top_camp['CPA']],
-            textposition='outside', textfont=dict(size=9, color=C_TEXT),
-            width=0.65,
-            customdata=top_camp[['channel','campaign_objective']].values,
-            hovertemplate="<b>%{y}</b><br>채널: %{customdata[0]}<br>목적: %{customdata[1]}<br>CPA: ₩%{x:,.0f}<extra></extra>",
-        ))
-        fig_c.add_vline(x=avg_camp_cpa, line_dash="dot", line_color=C_MUTED, line_width=1.2,
-                        annotation_text=f" 평균 ₩{avg_camp_cpa:,.0f}",
-                        annotation_font=dict(size=9, color=C_MUTED))
-        layout_c = base_layout(height=420, margin=dict(l=10, r=80, t=36, b=10))
-        layout_c['title'] = dict(text="CPA 최저 캠페인 Top 15 (초록 = 평균 이하)", font=dict(size=12, color=C_MUTED), x=0)
-        layout_c['xaxis']['title'] = "CPA (원)"
-        layout_c['xaxis']['tickformat'] = ","
-        layout_c['yaxis']['showgrid'] = False
-        layout_c['showlegend'] = False
-        fig_c.update_layout(**layout_c)
-        st.plotly_chart(fig_c, use_container_width=True)
+    camp_tm = camp.dropna(subset=['CPA']).copy()
+    avg_camp_cpa = camp_tm['CPA'].mean()
+    # CPA를 0~100으로 정규화 (낮을수록 좋으니 반전)
+    cpa_min, cpa_max = camp_tm['CPA'].min(), camp_tm['CPA'].max()
+    camp_tm['효율점수'] = (1 - (camp_tm['CPA'] - cpa_min) / (cpa_max - cpa_min)) * 100
+    camp_tm['CPA_label'] = camp_tm['CPA'].apply(lambda v: f"₩{v:,.0f}")
+    camp_tm['광고비_label'] = camp_tm['광고비'].apply(lambda v: fmt_won(v))
 
-    with col_tb:
-        # CPA vs 회원가입 산점도 — 캠페인 효율 포지셔닝
-        # 인사이트의 채널 버블과 다른 각도: 캠페인 단위 + 목적별 색상
-        camp_plot = camp.dropna(subset=['CPA','CVR'])
-        obj_colors = {'회원가입': C_GOOD, '계좌개설': C_ACCENT}
-        avg_cvr = camp_plot['CVR'].mean()
-        avg_cpa2 = camp_plot['CPA'].mean()
-
-        fig_c2 = go.Figure()
-        # 사분면 배경
-        fig_c2.add_shape(type="rect",
-            x0=0, x1=avg_cpa2, y0=avg_cvr, y1=camp_plot['CVR'].max()*1.1,
-            fillcolor="#f0fdf4", opacity=0.4, layer="below", line_width=0)
-        fig_c2.add_shape(type="rect",
-            x0=avg_cpa2, x1=camp_plot['CPA'].max()*1.1, y0=0, y1=avg_cvr,
-            fillcolor="#fef2f2", opacity=0.4, layer="below", line_width=0)
-
-        for obj in camp_plot['campaign_objective'].unique():
-            sub = camp_plot[camp_plot['campaign_objective'] == obj]
-            c = obj_colors.get(obj, C_MUTED)
-            fig_c2.add_trace(go.Scatter(
-                x=sub['CPA'], y=sub['CVR'],
-                mode='markers', name=obj,
-                marker=dict(size=8, color=c, opacity=0.65,
-                            line=dict(color='white', width=1)),
-                hovertemplate="<b>%{customdata[0]}</b><br>CPA: ₩%{x:,.0f}<br>CVR: %{y:.1f}%<extra></extra>",
-                customdata=sub[['campaign_id']].values,
-            ))
-        fig_c2.add_vline(x=avg_cpa2, line_dash="dot", line_color=C_BORDER, line_width=1)
-        fig_c2.add_hline(y=avg_cvr, line_dash="dot", line_color=C_BORDER, line_width=1)
-        fig_c2.add_annotation(x=avg_cpa2*0.3, y=camp_plot['CVR'].max()*1.05,
-            text="최적 구간\n저CPA·고CVR", font=dict(size=9, color=C_GOOD), showarrow=False,
-            bgcolor="#f0fdf4", bordercolor="#bbf7d0", borderwidth=1, borderpad=3)
-        fig_c2.add_annotation(x=camp_plot['CPA'].max()*0.9, y=avg_cvr*0.3,
-            text="비효율 구간\n고CPA·저CVR", font=dict(size=9, color=C_BAD), showarrow=False,
-            bgcolor="#fef2f2", bordercolor="#fecaca", borderwidth=1, borderpad=3)
-
-        layout_c2 = base_layout(height=420, margin=dict(l=10, r=10, t=36, b=10))
-        layout_c2['title'] = dict(text="캠페인 효율 매트릭스 — CPA(낮을수록) vs CVR(높을수록)", font=dict(size=12, color=C_MUTED), x=0)
-        layout_c2['xaxis']['title'] = "CPA (원, 낮을수록 우수)"
-        layout_c2['yaxis']['title'] = "CVR (%, 높을수록 우수)"
-        layout_c2['xaxis']['tickformat'] = ","
-        layout_c2['yaxis']['ticksuffix'] = "%"
-        layout_c2['legend'] = dict(font=dict(size=10), orientation='h', y=1.06)
-        fig_c2.update_layout(**layout_c2)
-        st.plotly_chart(fig_c2, use_container_width=True)
+    fig_tm = px.treemap(
+        camp_tm,
+        path=[px.Constant("전체"), 'channel', 'campaign_objective', 'campaign_id'],
+        values='광고비',
+        color='효율점수',
+        color_continuous_scale=[(0,"#fecaca"),(0.4,"#fde68a"),(0.7,"#6ee7b7"),(1,"#059669")],
+        color_continuous_midpoint=50,
+        custom_data=['CPA_label','광고비_label','CTR','CVR'],
+    )
+    fig_tm.update_traces(
+        texttemplate="<b>%{label}</b><br>%{customdata[0]}",
+        hovertemplate="<b>%{label}</b><br>광고비: %{customdata[1]}<br>CPA: %{customdata[0]}<br>CTR: %{customdata[2]:.2f}%<br>CVR: %{customdata[3]:.1f}%<extra></extra>",
+        textfont=dict(size=11, family=PLOTLY_FONT['family']),
+        marker_line_width=1.5, marker_line_color='white',
+    )
+    fig_tm.update_layout(
+        height=480,
+        margin=dict(l=0, r=0, t=50, b=0),
+        font=PLOTLY_FONT,
+        paper_bgcolor=C_SURFACE,
+        title=dict(
+            text="캠페인 성과 Treemap — 면적=광고비, 색상=CPA 효율 (초록=저비용·우수 / 빨강=고비용·비효율)",
+            font=dict(size=12, color=C_MUTED), x=0
+        ),
+        coloraxis_colorbar=dict(
+            title="CPA 효율",
+            tickvals=[0, 50, 100],
+            ticktext=["비효율", "평균", "최우수"],
+            thickness=12, len=0.6,
+        ),
+    )
+    st.plotly_chart(fig_tm, use_container_width=True)
 
     # 상세 테이블
     with st.expander("전체 캠페인 상세 데이터"):
@@ -500,33 +467,98 @@ with tab_cvr:
     cv8.metric("클릭 대비 반복사용", f"{d['반복사용'].sum()/d['광고클릭'].sum()*100:.2f}%", help="최종 LTV 유저 비율")
 
     st.divider()
-    # ── A안: 탭은 시계열 트렌드 탐색 중심 (채널/소재 비교는 인사이트 블록에) ──
-    # 월별 CVR 트렌드
-    cvr_mon = d.groupby('month_label').agg(
-        광고클릭=('광고클릭','sum'), 회원가입=('회원가입','sum'),
-        앱설치=('앱설치','sum'), 첫거래=('첫거래','sum')
-    ).reset_index()
-    cvr_mon['month_num'] = cvr_mon['month_label'].str.replace('월','').astype(int)
-    cvr_mon = cvr_mon.sort_values('month_num')
-    cvr_mon['클릭→설치'] = cvr_mon['앱설치']   / cvr_mon['광고클릭'] * 100
-    cvr_mon['클릭→가입'] = cvr_mon['회원가입']  / cvr_mon['광고클릭'] * 100
-    cvr_mon['클릭→거래'] = cvr_mon['첫거래']    / cvr_mon['광고클릭'] * 100
+    # ── 채널 × 소재 조합별 CVR 히트맵 — 어떤 조합이 실제로 전환을 만드나 ────
+    col_cvr_a, col_cvr_b = st.columns(2, gap="medium")
 
-    fig_cvr3 = go.Figure()
-    for col_name, color in [('클릭→설치','#2563eb'),('클릭→가입',C_GOOD),('클릭→거래',C_WARN)]:
-        fig_cvr3.add_trace(go.Scatter(
-            x=cvr_mon['month_label'], y=cvr_mon[col_name],
-            name=col_name, mode='lines+markers',
-            line=dict(color=color, width=2),
-            marker=dict(size=6, color=color),
+    with col_cvr_a:
+        # 클릭→가입 CVR 히트맵
+        cvr_hm = d.groupby(['channel','creative_format']).agg(
+            광고클릭=('광고클릭','sum'), 회원가입=('회원가입','sum'),
+            앱설치=('앱설치','sum'), 계좌개설=('계좌개설','sum')
+        ).reset_index()
+        cvr_hm['클릭→가입'] = cvr_hm['회원가입'] / cvr_hm['광고클릭'] * 100
+        cvr_hm['클릭→설치'] = cvr_hm['앱설치']   / cvr_hm['광고클릭'] * 100
+        cvr_hm['클릭→계좌'] = cvr_hm['계좌개설'] / cvr_hm['광고클릭'] * 100
+
+        pivot_cvr = cvr_hm.pivot(index='channel', columns='creative_format', values='클릭→가입').round(1)
+
+        fig_hm = go.Figure(go.Heatmap(
+            z=pivot_cvr.values,
+            x=pivot_cvr.columns.tolist(),
+            y=pivot_cvr.index.tolist(),
+            text=[[f"{v:.1f}%" for v in row] for row in pivot_cvr.values],
+            texttemplate="%{text}",
+            textfont=dict(size=14, color="white", family=PLOTLY_FONT['family']),
+            colorscale=[(0,"#fecaca"),(0.5,"#fde68a"),(1,"#059669")],
+            showscale=True,
+            colorbar=dict(title="CVR(%)", thickness=12, len=0.8,
+                          tickfont=dict(size=9)),
+            hoverongaps=False,
+            hovertemplate="<b>%{y} × %{x}</b><br>클릭→가입 CVR: %{text}<extra></extra>",
         ))
-    layout_cvr3 = base_layout(height=280)
-    layout_cvr3['title'] = dict(text="월별 CVR 추이 (클릭 기준)", font=dict(size=12, color=C_MUTED), x=0)
-    layout_cvr3['yaxis']['title'] = "CVR (%)"
-    layout_cvr3['yaxis']['ticksuffix'] = "%"
-    layout_cvr3['legend'] = dict(font=dict(size=10), orientation='h', y=1.08)
-    fig_cvr3.update_layout(**layout_cvr3)
-    st.plotly_chart(fig_cvr3, use_container_width=True)
+        layout_hm = base_layout(height=260, margin=dict(l=10, r=80, t=40, b=10))
+        layout_hm['title'] = dict(text="채널 × 소재 — 클릭→가입 CVR (%)", font=dict(size=12, color=C_MUTED), x=0)
+        layout_hm['xaxis']['tickangle'] = -20
+        layout_hm['xaxis']['tickfont']['size'] = 10
+        layout_hm['yaxis']['showgrid'] = False
+        layout_hm['showlegend'] = False
+        fig_hm.update_layout(**layout_hm)
+        st.plotly_chart(fig_hm, use_container_width=True)
+
+    with col_cvr_b:
+        # 클릭→계좌 CVR 히트맵
+        pivot_acct = cvr_hm.pivot(index='channel', columns='creative_format', values='클릭→계좌').round(1)
+
+        fig_hm2 = go.Figure(go.Heatmap(
+            z=pivot_acct.values,
+            x=pivot_acct.columns.tolist(),
+            y=pivot_acct.index.tolist(),
+            text=[[f"{v:.1f}%" for v in row] for row in pivot_acct.values],
+            texttemplate="%{text}",
+            textfont=dict(size=14, color="white", family=PLOTLY_FONT['family']),
+            colorscale=[(0,"#fecaca"),(0.5,"#fde68a"),(1,"#059669")],
+            showscale=True,
+            colorbar=dict(title="CVR(%)", thickness=12, len=0.8,
+                          tickfont=dict(size=9)),
+            hovertemplate="<b>%{y} × %{x}</b><br>클릭→계좌 CVR: %{text}<extra></extra>",
+        ))
+        layout_hm2 = base_layout(height=260, margin=dict(l=10, r=80, t=40, b=10))
+        layout_hm2['title'] = dict(text="채널 × 소재 — 클릭→계좌개설 CVR (%)", font=dict(size=12, color=C_MUTED), x=0)
+        layout_hm2['xaxis']['tickangle'] = -20
+        layout_hm2['xaxis']['tickfont']['size'] = 10
+        layout_hm2['yaxis']['showgrid'] = False
+        layout_hm2['showlegend'] = False
+        fig_hm2.update_layout(**layout_hm2)
+        st.plotly_chart(fig_hm2, use_container_width=True)
+
+    # 광고그룹(논타겟/리타겟) × 소재 CVR 추가 비교
+    cvr_ag = d.groupby(['ad_group','creative_format']).agg(
+        광고클릭=('광고클릭','sum'), 회원가입=('회원가입','sum')
+    ).reset_index()
+    cvr_ag['CVR'] = cvr_ag['회원가입'] / cvr_ag['광고클릭'] * 100
+    pivot_ag = cvr_ag.pivot(index='ad_group', columns='creative_format', values='CVR').round(1)
+
+    fig_hm3 = go.Figure(go.Heatmap(
+        z=pivot_ag.values,
+        x=pivot_ag.columns.tolist(),
+        y=pivot_ag.index.tolist(),
+        text=[[f"{v:.1f}%" for v in row] for row in pivot_ag.values],
+        texttemplate="%{text}",
+        textfont=dict(size=15, color="white", family=PLOTLY_FONT['family']),
+        colorscale=[(0,"#fecaca"),(0.5,"#fde68a"),(1,"#059669")],
+        showscale=True,
+        colorbar=dict(title="CVR(%)", thickness=12, len=0.6,
+                      tickfont=dict(size=9)),
+        hovertemplate="<b>%{y} × %{x}</b><br>클릭→가입 CVR: %{text}<extra></extra>",
+    ))
+    layout_hm3 = base_layout(height=220, margin=dict(l=10, r=80, t=40, b=10))
+    layout_hm3['title'] = dict(text="타겟그룹 × 소재 — 클릭→가입 CVR (%) — 어떤 조합이 실제 전환을 만드나",
+                               font=dict(size=12, color=C_MUTED), x=0)
+    layout_hm3['xaxis']['tickfont']['size'] = 10
+    layout_hm3['yaxis']['showgrid'] = False
+    layout_hm3['showlegend'] = False
+    fig_hm3.update_layout(**layout_hm3)
+    st.plotly_chart(fig_hm3, use_container_width=True)
 
 
 # ── 탭 3: 메트릭 하이어라키 (Plotly 도형 기반) ────────────────────────────────
