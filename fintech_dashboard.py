@@ -1647,8 +1647,6 @@ st.markdown("</div>", unsafe_allow_html=True)
 # INSIGHT 09 · 파레토 — 예산 집중도 진단
 # ══════════════════════════════════════════════════════════════════════════════
 st.markdown("<div class='insight-block'>", unsafe_allow_html=True)
-insight_card(9, "채널×포맷×타겟 12개 조합 중 상위 3개가 전환 63% 창출 — 나머지 9개는 예산 분산 효과 미미",
-             "파레토 분석: 최적 예산 집중 포인트 도출")
 
 three = d.groupby(['channel','creative_format','ad_group']).agg(
     광고비=('광고비','sum'), 회원가입=('회원가입','sum')
@@ -1657,7 +1655,11 @@ three['CPA'] = three['광고비'] / three['회원가입']
 three['label'] = three['channel'] + '/' + three['creative_format'] + '/' + three['ad_group']
 three = three.sort_values('회원가입', ascending=False)
 three['cum_pct'] = three['회원가입'].cumsum() / three['회원가입'].sum() * 100
-top3_pct = three.iloc[:3]['회원가입'].sum() / three['회원가입'].sum() * 100
+top3_pct_val = three.iloc[:3]['회원가입'].sum() / three['회원가입'].sum() * 100
+
+insight_card(9, f"채널×포맷×타겟 12개 조합 중 상위 3개가 전환 {top3_pct_val:.0f}% 창출 — 나머지 9개는 예산 분산 효과 미미",
+             "파레토 분석: 최적 예산 집중 포인트 도출")
+top3_pct = top3_pct_val
 
 bar_colors_p = [C_GOOD if i < 3 else "#94a3b8" for i in range(len(three))]
 
