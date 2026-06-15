@@ -1495,85 +1495,87 @@ insight_card(8, "리타겟팅이 신규타겟 대비 CPA 23% 저렴하지만 예
 ag = d.groupby('ad_group').agg(
     광고비=('광고비','sum'), 광고노출=('광고노출','sum'),
     광고클릭=('광고클릭','sum'), 회원가입=('회원가입','sum'),
-    첫거래=('첫거래','sum'), 반복사용=('반복사용','sum')
 ).reset_index()
-ag['CTR'] = ag['광고클릭'] / ag['광고노출'] * 100
-ag['CPA'] = ag['광고비'] / ag['회원가입']
-ag['retention'] = ag['반복사용'] / ag['회원가입'] * 100
-ag['예산비중'] = ag['광고비'] / ag['광고비'].sum() * 100
+ag['CTR']    = ag['광고클릭'] / ag['광고노출'] * 100
+ag['CPA']    = ag['광고비']   / ag['회원가입']
+ag['예산비중'] = ag['광고비']   / ag['광고비'].sum() * 100
+ag['성과비중'] = ag['회원가입'] / ag['회원가입'].sum() * 100
 
-# Radar chart for holistic comparison
-metrics_radar = ['CTR','CPA','retention']
-labels_radar = ['CTR\n(높을수록↑)','CPA\n(낮을수록↑)','반복사용률\n(높을수록↑)']
+리타겟 = ag[ag['ad_group'] == '리타겟'].iloc[0]
+논타겟  = ag[ag['ad_group'] == '논타겟'].iloc[0]
+ag_colors = {'논타겟': C_MUTED, '리타겟': C_GOOD}
 
-# Normalize: CTR and retention = higher is better, CPA = lower is better
-ag_norm = ag.copy()
-for col in ['CTR','retention']:
-    col_max = ag_norm[col].max()
-    ag_norm[col + '_norm'] = ag_norm[col] / col_max * 100
-cpa_max = ag_norm['CPA'].max()
-ag_norm['CPA_norm'] = (1 - (ag_norm['CPA'] / cpa_max)) * 100 + 10
-
-col1, col2 = st.columns([2, 3], gap="medium")
+col1, col2 = st.columns(2, gap="medium")
 
 with col1:
-    # Radar
-    cats = ['CTR', 'CPA 효율', '반복사용률', 'CTR']
-    groups = ag_norm['ad_group'].tolist()
-    radar_colors = [C_GOOD, C_ACCENT]
-
+    # CPA 직접 비교 — 가장 핵심 지표
     fig = go.Figure()
-    for i, (_, row) in enumerate(ag_norm.iterrows()):
-        vals_r = [row['CTR_norm'], row['CPA_norm'], row['retention_norm'], row['CTR_norm']]
-        fig.add_trace(go.Scatterpolar(
-            r=vals_r, theta=cats,
-            fill='toself', name=row['ad_group'],
-            line=dict(color=radar_colors[i], width=2),
-            fillcolor=hex_rgba(radar_colors[i]),
+    for _, row in ag.sort_values('CPA', ascending=False).iterrows():
+        fig.add_trace(go.Bar(
+            x=[row['CPA']], y=[row['ad_group']],
+            orientation='h',
+            marker_color=ag_colors.get(row['ad_group'], C_MUTED),
+            text=[f"₩{row['CPA']:,.0f}"],
+            textposition='inside', insidetextanchor='middle',
+            textfont=dict(size=14, color='white', family=PLOTLY_FONT['family']),
+            name=row['ad_group'], width=0.5,
+            hovertemplate=f"<b>{row['ad_group']}</b><br>CPA: ₩{row['CPA']:,.0f}<extra></extra>",
         ))
-    layout = base_layout(height=300)
-    layout['polar'] = dict(
-        radialaxis=dict(visible=True, range=[0, 100], tickfont=dict(size=8)),
-        angularaxis=dict(tickfont=dict(size=10))
+    # 차이 어노테이션
+    delta = (논타겟['CPA'] - 리타겟['CPA']) / 논타겟['CPA'] * 100
+    fig.add_annotation(
+        x=리타겟['CPA'] + 20, y=1,
+        text=f"<b>{delta:.0f}% 저렴</b>",
+        font=dict(size=12, color=C_GOOD),
+        showarrow=True, arrowhead=2, arrowcolor=C_GOOD,
+        bgcolor="#f0fdf4", bordercolor="#bbf7d0", borderwidth=1, borderpad=4,
+        ax=80, ay=0,
     )
-    layout['title'] = dict(text="신규 vs 리타겟팅 종합 효율 (정규화)", font=dict(size=12, color=C_MUTED), x=0)
-    layout['legend'] = dict(font=dict(size=10), orientation='h', y=-0.1)
-    layout.pop('xaxis', None)
-    layout.pop('yaxis', None)
-    layout['plot_bgcolor'] = C_SURFACE
+    layout = base_layout(height=240, margin=dict(l=10, r=120, t=50, b=10))
+    layout['title'] = dict(text="회원가입 CPA 비교 — 리타겟이 23% 더 저렴", font=dict(size=12, color=C_MUTED), x=0)
+    layout['xaxis']['title'] = "CPA (원)"
+    layout['xaxis']['tickformat'] = ","
+    layout['xaxis']['range'] = [0, 논타겟['CPA'] * 1.35]
+    layout['yaxis']['showgrid'] = False
+    layout['showlegend'] = False
     fig.update_layout(**layout)
     st.plotly_chart(fig, use_container_width=True)
 
 with col2:
-    # Delta bar chart
-    metrics_show = ['CTR', 'CPA', 'retention', '예산비중']
-    labels_show = ['CTR (%)', 'CPA (원)', '반복사용률 (%)', '예산비중 (%)']
+    # 예산비중 vs 성과비중 — "적게 쓰고 많이 버는가"
+    categories = ['예산 비중', '회원가입 비중']
+    fig2 = make_subplots(rows=1, cols=2,
+                         subplot_titles=['예산 배분 (%)', '회원가입 성과 (%)'])
+    for ci, metric in enumerate(['예산비중', '성과비중'], 1):
+        for _, row in ag.iterrows():
+            fig2.add_trace(go.Bar(
+                x=[row[metric]], y=[row['ad_group']],
+                orientation='h',
+                marker_color=ag_colors.get(row['ad_group'], C_MUTED),
+                text=[f"{row[metric]:.1f}%"],
+                textposition='inside', insidetextanchor='middle',
+                textfont=dict(size=12, color='white'),
+                width=0.5, showlegend=(ci == 1),
+                name=row['ad_group'],
+                hovertemplate=f"<b>{row['ad_group']}</b><br>{metric}: {row[metric]:.1f}%<extra></extra>",
+            ), row=1, col=ci)
 
-    fig2 = go.Figure()
-    x_cats = labels_show
-    for i, (_, row) in enumerate(ag.iterrows()):
-        c = radar_colors[i]
-        y_vals = [row['CTR'], row['CPA'], row['retention'], row['예산비중']]
-        fig2.add_trace(go.Bar(
-            name=row['ad_group'], x=x_cats, y=y_vals,
-            marker_color=c, opacity=0.85,
-            text=[f"{v:.1f}%" if j != 1 else f"₩{v:,.0f}" for j, v in enumerate(y_vals)],
-            textposition='outside', textfont=dict(size=10),
-        ))
-
-    layout2 = base_layout(height=300)
-    layout2['title'] = dict(text="핵심 지표 직접 비교", font=dict(size=12, color=C_MUTED), x=0)
-    layout2['barmode'] = 'group'
-    layout2['yaxis']['title'] = "값"
-    layout2['legend'] = dict(font=dict(size=10), orientation='h', y=1.08)
-    fig2.update_layout(**layout2)
+    fig2.update_layout(
+        height=240, barmode='stack',
+        margin=dict(l=10, r=10, t=50, b=10),
+        font=PLOTLY_FONT,
+        plot_bgcolor=C_SURFACE, paper_bgcolor=C_SURFACE,
+        title=dict(text="예산 대비 성과 — 리타겟은 적은 예산으로 더 많은 회원 획득", font=dict(size=12, color=C_MUTED), x=0),
+        legend=dict(orientation='h', y=1.12, font=dict(size=10)),
+    )
+    for ci in [1, 2]:
+        fig2.update_xaxes(showgrid=False, showticklabels=False, row=1, col=ci)
+        fig2.update_yaxes(showgrid=False, tickfont=dict(size=11, color=C_TEXT), row=1, col=ci)
     st.plotly_chart(fig2, use_container_width=True)
 
-newbie = ag[ag['ad_group'] == ag['ad_group'].iloc[0]].iloc[0]
-retarget = ag[ag['ad_group'] == ag['ad_group'].iloc[1]].iloc[0]
-delta_cpa = (newbie['CPA'] - retarget['CPA']) / newbie['CPA'] * 100
-finding(f"리타겟팅 CPA ₩{retarget['CPA']:,.0f} vs 신규타겟 ₩{newbie['CPA']:,.0f} ({delta_cpa:.0f}% 효율적). "
-        f"리타겟팅 예산 비중 {retarget['예산비중']:.0f}% → 50%로 확대 시 전체 CPA {delta_cpa*0.25:.0f}% 개선 가능.", "green")
+finding(f"리타겟팅은 예산의 {리타겟['예산비중']:.0f}%만 받고 회원가입의 {리타겟['성과비중']:.0f}%를 창출 — "
+        f"논타겟 대비 CPA ₩{논타겟['CPA']-리타겟['CPA']:,.0f} 저렴({delta:.0f}%). "
+        f"→ 리타겟팅 예산 비중을 {리타겟['예산비중']:.0f}% → 50%로 확대 시 동일 예산 대비 CPA 개선 기대.", "green")
 st.markdown("</div>", unsafe_allow_html=True)
 
 
